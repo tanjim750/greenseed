@@ -23,6 +23,7 @@ use App\Http\Controllers\Backend\AuthController;
 use App\Http\Controllers\Backend\CategoryController;
 use App\Http\Controllers\Backend\SliderController;
 use App\Http\Controllers\Backend\OrderController;
+use App\Http\Controllers\Backend\OrderStatusController;
 use App\Http\Controllers\Backend\CashSaleController; 
 use App\Http\Controllers\Backend\UsersController;
 use App\Http\Controllers\Backend\PermissionController;
@@ -356,6 +357,7 @@ Route::group(['prefix' => 'admin','middleware' => 'auth','as'=>'admin.'], functi
     Route::resource('categories',CategoryController::class);
     Route::resource('sliders',SliderController::class);
     Route::resource('orders',OrderController::class);
+    Route::resource('order-statuses',OrderStatusController::class)->except(['show', 'create', 'edit']);
     Route::resource('users',UsersController::class);
     Route::resource('roles',RoleController::class);
     Route::resource('permissions',PermissionController::class);

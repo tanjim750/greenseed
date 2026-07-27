@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Backend;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Order;
+use App\Models\OrderStatus;
 use App\Models\OrderDetails;
 use App\Models\Product;
 use App\Models\User;
@@ -78,14 +79,19 @@ class DashboardController extends Controller
                 $q->where('orders.assign_user_id', $user->id);
             });
 
+        $pendingStatuses = array_merge(['Pending', 'pending'], []);
+        $deliveredStatuses = OrderStatus::namesForFlag('counts_as_delivered');
+        $cancelledStatuses = OrderStatus::namesForFlag('counts_as_cancelled');
+        $returnStatuses = OrderStatus::namesForFlag('counts_as_return');
+
         // 1. Basic Stats
         $total_orders      = (clone $base)->count();
-        $pending_orders    = (clone $base)->whereIn('orders.status', ['Pending', 'pending'])->count();
-        $complete_orders   = (clone $base)->whereIn('orders.status', ['Complete', 'completed', 'Delivered', 'delivered'])->count();
+        $pending_orders    = (clone $base)->whereIn('orders.status', $pendingStatuses)->count();
+        $complete_orders   = (clone $base)->whereIn('orders.status', $deliveredStatuses)->count();
 
         // ✅ FIXED: Cancel & Return আলাদা (Return Missing যোগ করা হলো)
-        $cancel_orders     = (clone $base)->whereIn('orders.status', ['Cancelled', 'cancelled'])->count();
-        $return_orders     = (clone $base)->whereIn('orders.status', ['Returning', 'Return Received', 'Return Missing'])->count();
+        $cancel_orders     = (clone $base)->whereIn('orders.status', $cancelledStatuses)->count();
+        $return_orders     = (clone $base)->whereIn('orders.status', $returnStatuses)->count();
         $cancell_orders    = $cancel_orders + $return_orders;
 
         // শুধুমাত্র 'Incomplete' স্ট্যাটাসের অর্ডার কাউন্ট
@@ -93,7 +99,7 @@ class DashboardController extends Controller
 
         // 2. Sales & Costs Stats (Delivered Only)
         $deliveredOrders = clone $base;
-        $deliveredOrders->whereIn('orders.status', ['Complete', 'completed', 'Delivered', 'delivered']);
+        $deliveredOrders->whereIn('orders.status', $deliveredStatuses);
 
         $sell_amount     = (clone $deliveredOrders)->sum('orders.final_amount');
         $shipping_charge = (clone $deliveredOrders)->sum('orders.shipping_charge');
@@ -109,7 +115,7 @@ class DashboardController extends Controller
         $total_incomplete_val = $incomplete_query->sum('orders.final_amount') - $incomplete_query->sum('orders.shipping_charge');
 
         // ✅ FIXED: Return Value Calculation (Cancel বাদ, Return Missing যোগ)
-        $total_return_val     = (clone $base)->whereIn('orders.status', ['Returning', 'Return Received', 'Return Missing'])
+        $total_return_val     = (clone $base)->whereIn('orders.status', $returnStatuses)
                                              ->sum('orders.final_amount');
 
         // 3. Purchase Cost of Sold Items

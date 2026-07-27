@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Request;
 use App\Models\Order;
+use App\Models\OrderStatus;
 use App\Models\Information;
 use App\Models\OrderDetails;
 use App\Models\DeliveryCharge;
@@ -64,6 +65,40 @@ class OrderController extends Controller
         $this->carrybee_store_id = $info->carrybee_store_id ?? '';
 
         $this->util = $util;
+    }
+
+    private function applyStatusTransitionEffects(Order $order, $oldStatus, $newStatus): void
+    {
+        $oldMeta = OrderStatus::forStatus($oldStatus);
+        $newMeta = OrderStatus::forStatus($newStatus);
+
+        $shouldReduceStock = !empty($oldMeta['restores_stock']) && !empty($newMeta['reduces_stock']);
+        $shouldRestoreStock = !empty($oldMeta['reduces_stock']) && !empty($newMeta['restores_stock']);
+
+        if (!$shouldReduceStock && !$shouldRestoreStock) {
+            return;
+        }
+
+        foreach ($order->details as $line) {
+            if ($shouldReduceStock) {
+                $this->util->decreaseProductStock($line->product_id, $line->variation_id, $line->quantity);
+                $this->checkAndSendStockAlert($line->product_id);
+            }
+
+            if ($shouldRestoreStock) {
+                $this->util->increaseProductStock($line->product_id, $line->variation_id, $line->quantity);
+            }
+        }
+    }
+
+    private function statusMarksPaymentPaid($status): bool
+    {
+        return !empty(OrderStatus::forStatus($status)['marks_payment_paid']);
+    }
+
+    private function statusSmsKey($status): string
+    {
+        return OrderStatus::smsKeyFor($status);
     }
 
     private function getActiveWorkerIds($allowedWorkers = [])
@@ -996,25 +1031,14 @@ class OrderController extends Controller
             'assign_user_id' => $item->assign_user_id
         ];
 
-        $old_status = strtolower($item->status);
-        $change_status = strtolower(request('status'));
-        
-        $inactive_statuses = ['cancelled', 'returning', 'return received', 'return missing', 'cancell', 'return'];
-        $active_statuses = ['pending', 'incomplete', 'on hold', 'scheduled', 'confirmed', 'processing', 'courier complete', 'shipped', 'delivered'];
+        $old_status = $item->status;
+        $change_status = request('status');
 
-        foreach ($item->details as $line) {
-            if (in_array($old_status, $inactive_statuses) && in_array($change_status, $active_statuses)) {
-                $this->util->decreaseProductStock($line->product_id, $line->variation_id, $line->quantity);
-                $this->checkAndSendStockAlert($line->product_id);
-            }
-            if (in_array($old_status, $active_statuses) && in_array($change_status, $inactive_statuses)) {
-                $this->util->increaseProductStock($line->product_id, $line->variation_id, $line->quantity);
-            }
-        }
+        $this->applyStatusTransitionEffects($item, $old_status, $change_status);
 
         $item->status = request('status');
 
-        if (strtolower(request('status')) === 'delivered') {
+        if ($this->statusMarksPaymentPaid(request('status'))) {
             $item->payment_status = 'Paid';
         }
 
@@ -1038,7 +1062,7 @@ class OrderController extends Controller
         logActivity('Update Status', 'Order', "Order #{$item->id} status changed to {$item->status}", $item->id, $old_data, $new_data);
 
         $settings = Information::first();
-        $status = strtolower(request('status'));
+        $status = $this->statusSmsKey(request('status'));
         
        $statusMap = [
     'pending'          => ['active' => 'sms_pending_active',          'template' => 'sms_pending'],
@@ -1114,7 +1138,7 @@ class OrderController extends Controller
             $oldOrders = Order::whereIn('id', $order_ids)->get(['id', 'status', 'payment_status']);
 
             $updateData = ['status' => $status];
-            if (strtolower($status) === 'delivered') {
+            if ($this->statusMarksPaymentPaid($status)) {
                 $updateData['payment_status'] = 'Paid';
             }
             
@@ -1130,7 +1154,7 @@ class OrderController extends Controller
                 $old_data = ['status' => $o->status, 'payment_status' => $o->payment_status];
                 $new_data = [
                     'status' => $status, 
-                    'payment_status' => (strtolower($status) === 'delivered' ? 'Paid' : $o->payment_status)
+                    'payment_status' => ($this->statusMarksPaymentPaid($status) ? 'Paid' : $o->payment_status)
                 ];
 
                 logActivity('Update Status', 'Order', "Status changed to {$status}", $o->id, $old_data, $new_data);
@@ -1146,30 +1170,19 @@ class OrderController extends Controller
 
     public function multuOrderStatusUpdate()
     {
-        $inactive_statuses = ['cancelled', 'returning', 'return received', 'return missing', 'cancell', 'return'];
-        $active_statuses = ['pending', 'incomplete', 'on hold', 'scheduled', 'confirmed', 'processing', 'courier complete', 'shipped', 'delivered'];
-        
-        $change_status = strtolower(request('status'));
+        $change_status = request('status');
 
         foreach (request('order_ids') as $id) {
             $item = Order::with(['user', 'details'])->find($id);
-            $old_status = strtolower($item->status);
+            $old_status = $item->status;
             
             $old_data = ['status' => $item->status, 'payment_status' => $item->payment_status, 'assign_user_id' => $item->assign_user_id];
 
-            foreach ($item->details as $line) {
-                if (in_array($old_status, $inactive_statuses) && in_array($change_status, $active_statuses)) {
-                    $this->util->decreaseProductStock($line->product_id, $line->variation_id, $line->quantity);
-                    $this->checkAndSendStockAlert($line->product_id);
-                }
-                if (in_array($old_status, $active_statuses) && in_array($change_status, $inactive_statuses)) {
-                    $this->util->increaseProductStock($line->product_id, $line->variation_id, $line->quantity);
-                }
-            }
+            $this->applyStatusTransitionEffects($item, $old_status, $change_status);
 
             $item->status = request('status');
 
-            if (strtolower(request('status')) === 'delivered') {
+            if ($this->statusMarksPaymentPaid(request('status'))) {
                 $item->payment_status = 'Paid';
             }
 
@@ -1189,7 +1202,7 @@ class OrderController extends Controller
             logActivity('Update Status', 'Order', "Status changed to {$item->status}", $id, $old_data, $new_data);
 
             $settings = Information::first();
-            $status = strtolower(request('status'));
+            $status = $this->statusSmsKey(request('status'));
             
             $statusMap = [
                 'pending'          => ['active' => 'sms_pending_active',          'template' => 'sms_pending'],
@@ -1263,14 +1276,15 @@ class OrderController extends Controller
                     
                     if (in_array($courier_status, ['delivered', 'successful', 'success'])) {
                         $item->status = 'Delivered';
-                        $item->payment_status = 'Paid';
                     } 
                     elseif (in_array($courier_status, ['cancelled', 'returned', 'partial_delivered'])) {
                         $item->status = 'Returning';
-                        
-                        foreach ($item->details as $line) {
-                            $this->util->increaseProductStock($line->product_id, $line->variation_id, $line->quantity);
-                        }
+                    }
+
+                    $this->applyStatusTransitionEffects($item, $old_status, $item->status);
+
+                    if ($this->statusMarksPaymentPaid($item->status)) {
+                        $item->payment_status = 'Paid';
                     }
 
                     if (!$item->save()) return response()->json(['status' => false, 'invoice' => $item->order_id, 'errors' => 'Something went wrong!']);
@@ -1310,7 +1324,7 @@ class OrderController extends Controller
         }
 
         $order->courier_status = $request->input('status') ?? $request->input('delivery_status') ?? $request->input('state');
-        $old_status = strtolower($order->status);
+        $old_status = $order->status;
         $new_status = $order->status; 
 
         if (in_array($delivery_status, ['picked_up', 'in_transit', 'dispatched', 'active', 'pickup_done', 'scanned', 'assigned', 'accepted'])) {
@@ -1318,7 +1332,6 @@ class OrderController extends Controller
         } 
         elseif (in_array($delivery_status, ['delivered', 'successful', 'success'])) {
             $new_status = 'Delivered';
-            $order->payment_status = 'Paid';
         } 
         elseif (in_array($delivery_status, ['cancelled', 'failed', 'rejected', 'canceled'])) {
             $new_status = 'Cancelled';
@@ -1327,15 +1340,13 @@ class OrderController extends Controller
             $new_status = 'Returning';
         }
 
-        if ($old_status !== strtolower($new_status)) {
+        if (strtolower($old_status) !== strtolower($new_status)) {
             $order->status = $new_status;
 
-            if (in_array(strtolower($new_status), ['returning', 'cancelled', 'cancell']) && !in_array($old_status, ['returning', 'return received', 'cancelled', 'cancell', 'return missing'])) {
-                if ($order->details()->count()) {
-                    foreach ($order->details as $line) {
-                        $this->util->increaseProductStock($line->product_id, $line->variation_id, $line->quantity);
-                    }
-                }
+            $this->applyStatusTransitionEffects($order, $old_status, $new_status);
+
+            if ($this->statusMarksPaymentPaid($new_status)) {
+                $order->payment_status = 'Paid';
             }
 
             logActivity('Webhook', 'Order', "Auto updated to {$new_status} via Webhook. Tracking: {$tracking_code} | Courier Status: {$order->courier_status}", $order->id, ['status' => $old_status], ['status' => $new_status]);

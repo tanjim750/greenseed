@@ -70,22 +70,19 @@ function getSectionLists(){
 }
 
 function getOrderStatus($type=""){
-    return [
-        ''                 => 'All Order',
-        'Pending'          => 'Pending',
-        'Incomplete'       => 'Incomplete',
-        'On Hold'          => 'On Hold',
-        'Scheduled'        => 'Scheduled',
-        'Confirmed'        => 'Confirmed',
-        'Cancelled'        => 'Cancelled',
-        'Processing'       => 'Processing',
-        'Courier Complete' => 'Courier Complete',
-        'Shipped'          => 'Shipped',
-        'Delivered'        => 'Delivered',
-        'Returning'        => 'Returning',
-        'Return Received'  => 'Return Received',
-        'Return Missing'   => 'Return Missing'
-    ];
+    return \App\Models\OrderStatus::activeOptions(true);
+}
+
+function orderStatusLabel($status=null){
+    return \App\Models\OrderStatus::labelFor($status);
+}
+
+function orderStatusBadgeClass($status=null){
+    return \App\Models\OrderStatus::badgeClassFor($status);
+}
+
+function orderStatusesForFlag($flag){
+    return \App\Models\OrderStatus::namesForFlag($flag);
 }
 
 function getPaymentStatus(){

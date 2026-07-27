@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Backend;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Order;
+use App\Models\OrderStatus;
 use App\Models\OrderDetails;
 use App\Models\User;
 use App\Models\Courier;
@@ -21,6 +22,17 @@ use App\Models\OtherExpense;
 
 class ReportController extends Controller
 {
+    private function quotedStatusList(array $statuses): string
+    {
+        $statuses = array_values(array_unique(array_filter($statuses, fn ($status) => $status !== '')));
+
+        if (empty($statuses)) {
+            return "('__none__')";
+        }
+
+        return "('" . implode("','", array_map(fn ($status) => str_replace("'", "''", $status), $statuses)) . "')";
+    }
+
     /**
      * ✅ 1. SALES REPORT (FIXED)
      */
@@ -43,8 +55,9 @@ class ReportController extends Controller
                         ->orderBy('created_at', 'desc')
                         ->get();
 
-        // ✅ FIX: শুধুমাত্র "Delivered" অর্ডারের রেভিনিউ এবং প্রফিট হিসাব করা হলো
-        $validOrders = $orders->where('status', 'Delivered');
+        // ✅ FIX: শুধুমাত্র delivered-behavior অর্ডারের রেভিনিউ এবং প্রফিট হিসাব করা হলো
+        $deliveredStatuses = OrderStatus::namesForFlag('counts_as_delivered');
+        $validOrders = $orders->filter(fn ($order) => in_array($order->status, $deliveredStatuses, true));
 
         $totalOrders      = $orders->count(); // ব্লেডে দেখানোর জন্য সব অর্ডার
         $totalSales       = $validOrders->sum('final_amount'); 
@@ -118,7 +131,9 @@ class ReportController extends Controller
 
         $orders = $query->orderBy('created_at', 'desc')->get();
 
-        $response = new StreamedResponse(function() use ($orders) {
+        $deliveredStatuses = OrderStatus::namesForFlag('counts_as_delivered');
+
+        $response = new StreamedResponse(function() use ($orders, $deliveredStatuses) {
             $handle = fopen('php://output', 'w');
 
             fputcsv($handle, [
@@ -138,7 +153,7 @@ class ReportController extends Controller
                 $netSales = $order->final_amount - $delivery;
                 
                 // শুধুমাত্র ডেলিভারড হলে প্রফিট দেখাবে, নাহলে ০
-                $profit   = ($order->status === 'Delivered') ? ($netSales - $orderCost) : 0;
+                $profit   = in_array($order->status, $deliveredStatuses, true) ? ($netSales - $orderCost) : 0;
 
                 $payMethod = $order->transaction_id ? 'Online/SSL' : 'COD';
                 $trxId     = $order->transaction_id ?? 'N/A';
@@ -316,6 +331,11 @@ class ReportController extends Controller
             $assignUser = $request->assignUser;
             
             $statuses = getOrderStatus(); 
+            $deliveredStatuses = $this->quotedStatusList(OrderStatus::namesForFlag('counts_as_delivered'));
+            $failedStatuses = $this->quotedStatusList(array_merge(
+                OrderStatus::namesForFlag('counts_as_return'),
+                OrderStatus::namesForFlag('counts_as_cancelled')
+            ));
             
             $selects = [
                 'users.first_name as assign_user_name',
@@ -324,13 +344,14 @@ class ReportController extends Controller
                 DB::raw('COUNT(orders.id) as total_orders'),
                 
                 // ✅ প্রফেশনাল KPI ক্যালকুলেশন
-                DB::raw("SUM(CASE WHEN orders.status = 'Delivered' THEN 1 ELSE 0 END) as kpi_delivered"),
-                DB::raw("SUM(CASE WHEN orders.status IN ('Returning', 'Return Received', 'Return Missing', 'Cancelled') THEN 1 ELSE 0 END) as kpi_failed"),
+                DB::raw("SUM(CASE WHEN orders.status IN {$deliveredStatuses} THEN 1 ELSE 0 END) as kpi_delivered"),
+                DB::raw("SUM(CASE WHEN orders.status IN {$failedStatuses} THEN 1 ELSE 0 END) as kpi_failed"),
             ];
 
             foreach ($statuses as $key => $label) {
                 $safeColumnName = 'status_' . preg_replace('/[^a-zA-Z0-9]/', '_', strtolower($key)); 
-                $selects[] = DB::raw("SUM(CASE WHEN orders.status = '{$key}' THEN 1 ELSE 0 END) as `{$safeColumnName}`");
+                $safeKey = str_replace("'", "''", $key);
+                $selects[] = DB::raw("SUM(CASE WHEN orders.status = '{$safeKey}' THEN 1 ELSE 0 END) as `{$safeColumnName}`");
             }
 
             $query = Order::leftJoin('users', 'orders.assign_user_id', '=', 'users.id')
@@ -356,8 +377,8 @@ class ReportController extends Controller
             $query->groupBy('orders.assign_user_id', 'users.first_name', 'users.last_name');
             
             // ✅ প্রফেশনাল র‍্যাংকিং: Net Contribution (Delivered - Failed) এর ভিত্তিতে বড় থেকে ছোট
-            $query->orderByRaw("(SUM(CASE WHEN orders.status = 'Delivered' THEN 1 ELSE 0 END) - SUM(CASE WHEN orders.status IN ('Returning', 'Return Received', 'Return Missing', 'Cancelled') THEN 1 ELSE 0 END)) DESC");
-            $query->orderByRaw("SUM(CASE WHEN orders.status = 'Delivered' THEN 1 ELSE 0 END) DESC"); // টাই ব্রেকার
+            $query->orderByRaw("(SUM(CASE WHEN orders.status IN {$deliveredStatuses} THEN 1 ELSE 0 END) - SUM(CASE WHEN orders.status IN {$failedStatuses} THEN 1 ELSE 0 END)) DESC");
+            $query->orderByRaw("SUM(CASE WHEN orders.status IN {$deliveredStatuses} THEN 1 ELSE 0 END) DESC"); // টাই ব্রেকার
             
             $items = $query->paginate(20);
             
@@ -381,7 +402,7 @@ class ReportController extends Controller
 
         $orders = Order::with('details.product')
             ->whereDate('created_at', $date)
-            ->where('status', 'Delivered') // ✅ FIX: শুধুমাত্র Delivered
+            ->whereIn('status', OrderStatus::namesForFlag('counts_as_delivered')) // ✅ FIX: delivered-behavior only
             ->get();
 
         $totalSales = $orders->sum('final_amount');
@@ -469,7 +490,7 @@ class ReportController extends Controller
         $orders = Order::with('details.product')
             ->whereYear('created_at', $year)
             ->whereMonth('created_at', $month)
-            ->where('status', 'Delivered') // ✅ FIX: শুধুমাত্র Delivered
+            ->whereIn('status', OrderStatus::namesForFlag('counts_as_delivered')) // ✅ FIX: delivered-behavior only
             ->get();
 
         $monthlySales = $orders->sum('final_amount');
@@ -525,8 +546,11 @@ class ReportController extends Controller
         $searchQuery  = trim($request->q);
 
         // ✅ FIX: হেল্পারের সাথে হুবহু মিল রেখে স্ট্যাটাস সেট করা হলো
-        $badStatuses = "('Cancelled', 'Returning', 'Return Received', 'Return Missing')";
-        $goodStatuses = "('Delivered')";
+        $badStatuses = $this->quotedStatusList(array_merge(
+            OrderStatus::namesForFlag('counts_as_cancelled'),
+            OrderStatus::namesForFlag('counts_as_return')
+        ));
+        $goodStatuses = $this->quotedStatusList(OrderStatus::namesForFlag('counts_as_delivered'));
 
         $baseQuery = DB::table('order_details')
             ->join('orders', 'order_details.order_id', '=', 'orders.id')
@@ -614,9 +638,9 @@ class ReportController extends Controller
             ->select(
                 'couriers.name as courier_name',
                 DB::raw('COUNT(orders.id) as total_assigned'),
-                DB::raw("SUM(CASE WHEN orders.status = 'Delivered' THEN 1 ELSE 0 END) as total_delivered"),
-                DB::raw("SUM(CASE WHEN orders.status IN ('Cancelled', 'Returning', 'Return Received', 'Return Missing') THEN 1 ELSE 0 END) as total_returned"),
-                DB::raw("SUM(CASE WHEN orders.status IN ('Pending', 'Confirmed', 'Scheduled', 'Processing', 'On Hold', 'Shipped') THEN 1 ELSE 0 END) as total_processing")
+                DB::raw("SUM(CASE WHEN orders.status IN ".$this->quotedStatusList(OrderStatus::namesForFlag('counts_as_delivered'))." THEN 1 ELSE 0 END) as total_delivered"),
+                DB::raw("SUM(CASE WHEN orders.status IN ".$this->quotedStatusList(array_merge(OrderStatus::namesForFlag('counts_as_cancelled'), OrderStatus::namesForFlag('counts_as_return')))." THEN 1 ELSE 0 END) as total_returned"),
+                DB::raw("SUM(CASE WHEN orders.status IN ".$this->quotedStatusList(OrderStatus::namesForFlag('counts_as_active'))." THEN 1 ELSE 0 END) as total_processing")
             )
             ->groupBy('orders.courier_id', 'couriers.name')
             ->orderByDesc('total_assigned')

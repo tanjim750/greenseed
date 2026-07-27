@@ -105,13 +105,8 @@ class HomeController extends Controller
                 $html = '';
                 foreach($orders as $order){
                     
-                    // স্ট্যাটাস কালার লজিক
-                    $badgeClass = 'bg-secondary';
-                    if($order->status == 'pending') $badgeClass = 'bg-warning text-dark';
-                    elseif($order->status == 'processing') $badgeClass = 'bg-info text-white';
-                    elseif($order->status == 'courier') $badgeClass = 'bg-primary';
-                    elseif($order->status == 'complete') $badgeClass = 'bg-success';
-                    elseif($order->status == 'cancell' || $order->status == 'return') $badgeClass = 'bg-danger';
+                    $badgeClass = e(orderStatusBadgeClass($order->status));
+                    $statusLabel = e(orderStatusLabel($order->status));
 
                     // HTML জেনারেশন
                     $html .= '
@@ -137,7 +132,7 @@ class HomeController extends Controller
                         
                         <div class="d-flex justify-content-between align-items-center mt-2 pt-2 border-top">
                             <span class="text-muted fw-medium" style="font-size: 13px;"><i class="fas fa-info-circle me-1 text-info"></i> Status:</span>
-                            <span class="badge rounded-pill px-3 py-1 '.$badgeClass.'" style="font-size: 11px; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">'.ucfirst($order->status).'</span>
+                            <span class="badge rounded-pill px-3 py-1 '.$badgeClass.'" style="font-size: 11px; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">'.$statusLabel.'</span>
                         </div>
                     </div>';
                 }

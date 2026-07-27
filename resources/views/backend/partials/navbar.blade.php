@@ -71,7 +71,7 @@
                 </a>
             </li>
 
-            @php $ordersOpen = (request()->is('admin/orders*') || request()->routeIs('admin.scan_return.*')) ? 'show' : ''; @endphp
+            @php $ordersOpen = (request()->is('admin/orders*') || request()->routeIs('admin.scan_return.*') || request()->routeIs('admin.order-statuses.*')) ? 'show' : ''; @endphp
             @if($isWorker || auth()->user()->can('order.view') || auth()->user()->can('permission.view'))
             <li class="menu-item">
                 <button class="menu-link has-dropdown {{ $ordersOpen ? 'active' : 'collapsed' }}" type="button" 
@@ -101,6 +101,13 @@
                         @endif
 
                         @unless($isWorker)
+                        <li>
+                            <a href="{{ route('admin.order-statuses.index') }}"
+                               class="sub-link {{ request()->routeIs('admin.order-statuses.*') ? 'active' : '' }}">
+                                <i class="mdi mdi-format-list-checks"></i>
+                                <span>Manage Statuses</span>
+                            </a>
+                        </li>
                         <li>
                             <a href="{{ route('admin.scan_return.index') }}" 
                                class="sub-link {{ request()->routeIs('admin.scan_return.*') ? 'active' : '' }}">
