@@ -1,0 +1,11 @@
+# Ignore Docker build files and local artifacts
+.git
+vendor
+node_modules
+npm-debug.log
+yarn-error.log
+.env
+storage/framework/cache/data
+storage/framework/sessions
+storage/framework/views
+storage/logs

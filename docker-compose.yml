@@ -1,0 +1,73 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: greenseed_app:latest
+    env_file:
+      - .env
+    environment:
+      APP_ENV: local
+      APP_DEBUG: '1'
+      APP_URL: http://localhost
+      DB_HOST: db
+      DB_PORT: '3306'
+      DB_DATABASE: '${DB_DATABASE}'
+      DB_USERNAME: '${DB_USERNAME}'
+      DB_PASSWORD: '${DB_PASSWORD}'
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      MAIL_HOST: mailhog
+      MAIL_PORT: '${MAIL_PORT:-1025}'
+    volumes:
+      - ./:/var/www/html
+      - vendor:/var/www/html/vendor
+    ports:
+      - '8000:8000'
+    depends_on:
+      - db
+      - redis
+      - mailhog
+    networks:
+      - greenseed
+
+  db:
+    image: mysql:8.0
+    command: --innodb-strict-mode=OFF
+    env_file:
+      - .env
+    environment:
+      MYSQL_DATABASE: '${DB_DATABASE}'
+      MYSQL_USER: '${DB_USERNAME}'
+      MYSQL_PASSWORD: '${DB_PASSWORD}'
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - '${DB_FORWARD_PORT:-3307}:3306'
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./greense1_hb.sql:/docker-entrypoint-initdb.d/greense1_hb.sql:ro
+    networks:
+      - greenseed
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '${REDIS_FORWARD_PORT:-6380}:6379'
+    networks:
+      - greenseed
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+    networks:
+      - greenseed
+
+volumes:
+  vendor:
+  dbdata:
+
+networks:
+  greenseed:
+    driver: bridge
