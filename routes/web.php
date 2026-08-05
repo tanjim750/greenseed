@@ -63,6 +63,13 @@ use App\Models\Product;
 Route::get('/facebook-product-feed.xml', [FacebookFeedController::class, 'index']);
 Route::get('/facebook-feed', [FacebookFeedController::class, 'settings']);
 Route::post('/lp/track/initiate-checkout', [\App\Http\Controllers\LandingPixelController::class, 'initiateCheckout'])->name('lp.track.initiate_checkout');
+Route::post('/dynamic-landing/actions/{actionKey}', [\App\Http\Controllers\DynamicLandingActionController::class, 'store'])
+    ->middleware('throttle:10,1')
+    ->name('dynamic_landing.actions.store');
+Route::get('/landing/{slug}', [\App\Http\Controllers\DynamicLandingPagePublicController::class, 'show'])
+    ->name('dynamic_landing.public.show');
+Route::get('/dynamic-landing/{slug}', fn (string $slug) => redirect()->route('dynamic_landing.public.show', ['slug' => $slug], 301))
+    ->name('dynamic_landing.public.legacy');
 Route::post('/facebook-feed/toggle', [FacebookFeedController::class, 'toggle'])->name('facebook_feed.toggle');
 
 Route::get('/product-show/{product}', [ProductController::class, 'show'])->name('products.show');
@@ -237,6 +244,67 @@ Route::group(['middleware' => ['auth']], function () {
 });
 
 Route::group(['prefix' => 'admin','middleware' => 'auth','as'=>'admin.'], function() {
+
+    Route::get('/page-builder', [\App\Http\Controllers\DynamicLandingPageBuilderController::class, 'pages'])
+        ->name('dynamic_landing_builder.pages');
+    Route::get('/dynamic-landing-builder', [\App\Http\Controllers\DynamicLandingPageBuilderController::class, 'index'])
+        ->name('dynamic_landing_builder.index');
+    Route::get('/dynamic-landing-builder-v2', [\App\Http\Controllers\DynamicLandingPageBuilderController::class, 'v2'])
+        ->name('dynamic_landing_builder.v2');
+
+    Route::get('/dynamic-landing-components', [\App\Http\Controllers\DynamicLandingComponentCatalogController::class, 'index'])
+        ->name('dynamic_landing_components.index');
+    Route::get('/dynamic-landing-components/{componentKey}/preview', [\App\Http\Controllers\DynamicLandingComponentCatalogController::class, 'preview'])
+        ->name('dynamic_landing_components.preview');
+    Route::get('/dynamic-landing-components/{componentKey}', [\App\Http\Controllers\DynamicLandingComponentCatalogController::class, 'show'])
+        ->name('dynamic_landing_components.show');
+    Route::get('/dynamic-landing-products/options', [\App\Http\Controllers\DynamicLandingProductOptionController::class, 'index'])
+        ->name('dynamic_landing_products.options');
+
+    Route::get('/dynamic-landing-pages', [\App\Http\Controllers\DynamicLandingPageEditorController::class, 'index'])
+        ->name('dynamic_landing_pages.index');
+    Route::post('/dynamic-landing-pages', [\App\Http\Controllers\DynamicLandingPageEditorController::class, 'store'])
+        ->name('dynamic_landing_pages.store');
+    Route::get('/dynamic-landing-pages/{page}', [\App\Http\Controllers\DynamicLandingPageEditorController::class, 'show'])
+        ->name('dynamic_landing_pages.show');
+    Route::patch('/dynamic-landing-pages/{page}', [\App\Http\Controllers\DynamicLandingPageEditorController::class, 'update'])
+        ->name('dynamic_landing_pages.update');
+    Route::delete('/dynamic-landing-pages/{page}', [\App\Http\Controllers\DynamicLandingPageEditorController::class, 'destroy'])
+        ->name('dynamic_landing_pages.destroy');
+
+    Route::post('/dynamic-landing-pages/{page}/components', [\App\Http\Controllers\DynamicLandingPageComponentEditorController::class, 'store'])
+        ->name('dynamic_landing_pages.components.store');
+    Route::patch('/dynamic-landing-pages/{page}/components/{component}', [\App\Http\Controllers\DynamicLandingPageComponentEditorController::class, 'update'])
+        ->name('dynamic_landing_pages.components.update');
+    Route::delete('/dynamic-landing-pages/{page}/components/{component}', [\App\Http\Controllers\DynamicLandingPageComponentEditorController::class, 'destroy'])
+        ->name('dynamic_landing_pages.components.destroy');
+    Route::post('/dynamic-landing-pages/{page}/components/reorder', [\App\Http\Controllers\DynamicLandingPageComponentEditorController::class, 'reorder'])
+        ->name('dynamic_landing_pages.components.reorder');
+    Route::post('/dynamic-landing-pages/{page}/components/{component}/duplicate', [\App\Http\Controllers\DynamicLandingPageComponentEditorController::class, 'duplicate'])
+        ->name('dynamic_landing_pages.components.duplicate');
+    Route::patch('/dynamic-landing-pages/{page}/components/{component}/visibility', [\App\Http\Controllers\DynamicLandingPageComponentEditorController::class, 'visibility'])
+        ->name('dynamic_landing_pages.components.visibility');
+
+    Route::get('/dynamic-landing-pages/{page}/preview', [\App\Http\Controllers\DynamicLandingPagePublicationController::class, 'preview'])
+        ->middleware('signed')
+        ->name('dynamic_landing_pages.preview');
+    Route::get('/dynamic-landing-pages/{page}/components/{component}/preview', [\App\Http\Controllers\DynamicLandingPagePublicationController::class, 'componentPreview'])
+        ->name('dynamic_landing_pages.components.preview');
+    Route::post('/dynamic-landing-pages/{page}/publish', [\App\Http\Controllers\DynamicLandingPagePublicationController::class, 'publish'])
+        ->name('dynamic_landing_pages.publish');
+    Route::post('/dynamic-landing-page-versions/{version}/restore', [\App\Http\Controllers\DynamicLandingPagePublicationController::class, 'restore'])
+        ->name('dynamic_landing_page_versions.restore');
+
+    Route::get('/dynamic-landing-saved-sections', [\App\Http\Controllers\DynamicLandingSavedSectionController::class, 'index'])
+        ->name('dynamic_landing_saved_sections.index');
+    Route::post('/dynamic-landing-saved-sections', [\App\Http\Controllers\DynamicLandingSavedSectionController::class, 'store'])
+        ->name('dynamic_landing_saved_sections.store');
+    Route::delete('/dynamic-landing-saved-sections/{section}', [\App\Http\Controllers\DynamicLandingSavedSectionController::class, 'destroy'])
+        ->name('dynamic_landing_saved_sections.destroy');
+    Route::post('/dynamic-landing-pages/{page}/saved-sections/{section}/apply', [\App\Http\Controllers\DynamicLandingSavedSectionController::class, 'apply'])
+        ->name('dynamic_landing_pages.saved_sections.apply');
+    Route::post('/dynamic-landing-pages/{page}/components/import', [\App\Http\Controllers\DynamicLandingSavedSectionController::class, 'import'])
+        ->name('dynamic_landing_pages.components.import');
 
     Route::post('manual-payments', [ManualPaymentController::class, 'store'])->name('manual_payments.store');
     Route::get('manual-payments/toggle/{id}', [ManualPaymentController::class, 'toggle'])->name('manual_payments.toggle');
