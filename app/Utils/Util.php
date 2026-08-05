@@ -2,6 +2,7 @@
 namespace App\Utils;
 
 use App\Models\ProductStock;
+use App\Models\Variation;
 
 class Util {
 
@@ -44,7 +45,19 @@ class Util {
 	}
 
 
+	private function resolveVariationId($product_id, $variation_id)
+	{
+		if (!empty($variation_id) && (int) $variation_id > 0) {
+			return (int) $variation_id;
+		}
+
+		return Variation::where('product_id', $product_id)->value('id');
+	}
+
 	public function increaseProductStock($product_id,$variation_id, $stock){
+
+		$variation_id = $this->resolveVariationId($product_id, $variation_id);
+		if (empty($variation_id)) return false;
 
 		$item=ProductStock::where(['product_id'=>$product_id,'variation_id'=>$variation_id])->first();
 
@@ -68,6 +81,9 @@ class Util {
 
 
 	public function updateProductStock($product_id, $variation_id, $old_stock, $new_stock){
+
+		$variation_id = $this->resolveVariationId($product_id, $variation_id);
+		if (empty($variation_id)) return false;
 
 		$item=ProductStock::where(['product_id'=>$product_id, 'variation_id'=>$variation_id])->first();
 		$stock=$new_stock -$old_stock;
@@ -94,6 +110,9 @@ class Util {
 
 	public function decreaseProductStock($product_id, $variation_id, $stock){
 
+		$variation_id = $this->resolveVariationId($product_id, $variation_id);
+		if (empty($variation_id)) return false;
+
 		$item=ProductStock::where(['product_id'=>$product_id, 'variation_id'=>$variation_id])->first();
 
 		if($item){
@@ -108,6 +127,9 @@ class Util {
 
 
 	public function checkProductStock($product_id, $variation_id){
+
+		$variation_id = $this->resolveVariationId($product_id, $variation_id);
+		if (empty($variation_id)) return 0;
 
 		$item=ProductStock::where(['product_id'=>$product_id, 'variation_id'=>$variation_id])->first();
 		

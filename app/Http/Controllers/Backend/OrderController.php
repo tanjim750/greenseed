@@ -101,6 +101,27 @@ class OrderController extends Controller
         return OrderStatus::smsKeyFor($status);
     }
 
+    private function courierSentOrderStatus($currentStatus): string
+    {
+        $behavior = trim((string) config('orders.courier_sent_order_status', 'Shipped'));
+
+        if ($behavior === '') {
+            return 'Shipped';
+        }
+
+        if (strtolower($behavior) === 'keep_current') {
+            return (string) $currentStatus;
+        }
+
+        foreach (OrderStatus::defaults() as $status) {
+            if (strtolower($status['name']) === strtolower($behavior)) {
+                return $status['name'];
+            }
+        }
+
+        return 'Shipped';
+    }
+
     private function getActiveWorkerIds($allowedWorkers = [])
     {
         if (empty($allowedWorkers)) return collect([]);
@@ -1495,13 +1516,21 @@ class OrderController extends Controller
     {
         $order->courier_id = $order->courier_id ?: $courierId;
         $old_status = $order->status;
-        $order->status = 'Shipped';
+        $new_status = $this->courierSentOrderStatus($old_status);
+
+        $this->applyStatusTransitionEffects($order, $old_status, $new_status);
+
+        $order->status = $new_status;
+        if ($this->statusMarksPaymentPaid($new_status)) {
+            $order->payment_status = 'Paid';
+        }
+
         foreach ($extra as $k => $v) {
             $order->{$k} = $v;
         }
         $order->save();
         
-        logActivity('Courier Update', 'Order', "Sent to courier ID: {$courierId} and status changed to Shipped", $order->id, ['status' => $old_status], ['status' => 'Shipped']);
+        logActivity('Courier Update', 'Order', "Sent to courier ID: {$courierId} and status changed to {$new_status}", $order->id, ['status' => $old_status], ['status' => $new_status]);
     }
 
     public function OrderSendToRedx()
