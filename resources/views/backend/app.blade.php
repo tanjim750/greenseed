@@ -264,5 +264,6 @@
         }, 60000); 
     </script>
     @include('backend.partials.js')
+    @stack('script')
 </body>
 </html>

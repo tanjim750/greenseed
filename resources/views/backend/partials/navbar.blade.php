@@ -299,6 +299,14 @@
 
             @php $landingOpen = request()->routeIs('admin.landing_pages*') ? 'show' : ''; @endphp
             <li class="menu-item">
+                <a href="{{ route('admin.dynamic_landing_builder.pages') }}"
+                   class="menu-link {{ nav_active(['admin.dynamic_landing_builder.*']) }}">
+                    <i class="menu-icon mdi mdi-view-dashboard-edit-outline"></i>
+                    <span class="menu-text">Page Builder</span>
+                </a>
+            </li>
+
+            <li class="menu-item">
                 <button class="menu-link has-dropdown {{ $landingOpen ? '' : 'collapsed' }}" type="button" 
                         data-bs-toggle="collapse" data-bs-target="#menuLanding" 
                         aria-expanded="{{ $landingOpen ? 'true':'false' }}">
