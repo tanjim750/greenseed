@@ -19,3 +19,8 @@ error_log
 public/error_log
 *.sql
 *.zip
+docs
+/docs
+stitch
+/stitch
+*.sql

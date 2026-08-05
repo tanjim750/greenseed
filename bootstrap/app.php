@@ -13,7 +13,7 @@
 
 @include_once dirname(__DIR__) . '/vendor/composer/Support/ClassVersionLoader.php';
 
-define('LARAVEL_START', microtime(true));
+defined('LARAVEL_START') || define('LARAVEL_START', microtime(true));
 
 $app = new Illuminate\Foundation\Application(
     $_ENV['APP_BASE_PATH'] ?? dirname(__DIR__)
