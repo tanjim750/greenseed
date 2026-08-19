@@ -500,6 +500,10 @@
         </ul>
     </div>
     <button type="button" class="btn btn-sm btn-success text-white" id="bb-print"><i class="mdi mdi-printer"></i> Print Selected</button>
+    <button type="button" class="btn btn-sm btn-dark text-white" id="bb-trash"><i class="mdi mdi-trash-can-outline"></i> Move to Trash</button>
+    @can('order.delete')
+        <button type="button" class="btn btn-sm btn-danger text-white" id="bb-force-delete"><i class="mdi mdi-delete-forever"></i> Delete Permanently</button>
+    @endcan
 </div>
 
 @endsection
@@ -943,6 +947,24 @@ $(function(){
     $('#bb-assign').on('click', function(){ $('.btn_modal[href="{{ route("admin.assignUser") }}"]').trigger('click'); });
     $('#bb-status').on('click', function(){ $('.btn_modal[href="{{ route("admin.orderStatusUpdateMulti") }}"]').trigger('click'); });
     $('#bb-print').on('click', function(){ $('.multi_order_print').first().trigger('click'); });
+    $('#bb-trash').on('click', function(){
+        const order_ids = $('.order_checkbox:checked:visible').map(function(){ return $(this).val(); }).get();
+        if(!order_ids.length){ toastr.error('Please Select Atleast One Order!'); return; }
+
+        $.get('{{ route("admin.multuOrderStatusUpdate") }}', {status: 'Trash', order_ids}, function(res){
+            if(res.status){ toastr.success(res.msg); smartReload(); }
+            else{ toastr.error(res.msg || 'Something went wrong!'); }
+        });
+    });
+    $('#bb-force-delete').on('click', function(){
+        const order_ids = $('.order_checkbox:checked:visible').map(function(){ return $(this).val(); }).get();
+        if(!order_ids.length){ toastr.error('Please Select Atleast One Order!'); return; }
+
+        $.get('{{ route("admin.deleteAllOrder2") }}', {order_ids}, function(res){
+            if(res.status){ toastr.success(res.msg); smartReload(); }
+            else{ toastr.error(res.msg || 'Something went wrong!'); }
+        });
+    });
     $('#bb-delete').on('click', function(){ $('.multi_order_delete').trigger('click'); });
 
     $(document).on('click', '.ajax-pagination a, .pagination a', function(e) {

@@ -395,7 +395,7 @@ Route::group(['prefix' => 'admin','middleware' => 'auth','as'=>'admin.'], functi
 
         Route::get('/trashed/orders', 'trashed_orders')->name('trashed_orders');
         Route::get('/restore/order', 'restore_order')->name('restore_order');
-        Route::get('/force/delete/order/{id}', 'forceDel')->name('forceDel');
+        Route::get('/force/delete/order/{id}', 'forceDelWithStatusRule')->name('forceDel');
     });
 
     Route::prefix('cash-sales')->name('cash_sales.')->group(function () {

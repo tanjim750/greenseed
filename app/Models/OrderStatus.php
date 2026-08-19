@@ -63,6 +63,7 @@ class OrderStatus extends Model
             ['name' => 'Returning', 'slug' => 'returning', 'status_group' => 'return', 'badge_class' => 'bg-danger', 'sort_order' => 110, 'is_active' => true, 'is_default' => true, 'counts_as_active' => false, 'counts_as_delivered' => false, 'counts_as_cancelled' => false, 'counts_as_return' => true, 'counts_as_shipped' => false, 'marks_payment_paid' => false, 'restores_stock' => true, 'reduces_stock' => false, 'sms_key' => 'returning'],
             ['name' => 'Return Received', 'slug' => 'return-received', 'status_group' => 'return', 'badge_class' => 'bg-danger', 'sort_order' => 120, 'is_active' => true, 'is_default' => true, 'counts_as_active' => false, 'counts_as_delivered' => false, 'counts_as_cancelled' => false, 'counts_as_return' => true, 'counts_as_shipped' => false, 'marks_payment_paid' => false, 'restores_stock' => true, 'reduces_stock' => false, 'sms_key' => 'return received'],
             ['name' => 'Return Missing', 'slug' => 'return-missing', 'status_group' => 'return', 'badge_class' => 'bg-danger', 'sort_order' => 130, 'is_active' => true, 'is_default' => true, 'counts_as_active' => false, 'counts_as_delivered' => false, 'counts_as_cancelled' => false, 'counts_as_return' => true, 'counts_as_shipped' => false, 'marks_payment_paid' => false, 'restores_stock' => true, 'reduces_stock' => false, 'sms_key' => 'return missing'],
+            ['name' => 'Trash', 'slug' => 'trash', 'status_group' => 'cancelled', 'badge_class' => 'bg-dark', 'sort_order' => 140, 'is_active' => true, 'is_default' => true, 'counts_as_active' => false, 'counts_as_delivered' => false, 'counts_as_cancelled' => true, 'counts_as_return' => false, 'counts_as_shipped' => false, 'marks_payment_paid' => false, 'restores_stock' => true, 'reduces_stock' => false, 'sms_key' => null],
         ];
     }
 
@@ -128,7 +129,7 @@ class OrderStatus extends Model
         if ($flag === 'counts_as_delivered') {
             $names = array_merge($names, ['Complete', 'completed', 'delivered']);
         } elseif ($flag === 'counts_as_cancelled') {
-            $names = array_merge($names, ['cancelled', 'Cancell', 'cancell', 'Canceled', 'canceled']);
+            $names = array_merge($names, ['cancelled', 'Cancell', 'cancell', 'Canceled', 'canceled', 'trash', 'Trash']);
         } elseif ($flag === 'counts_as_return') {
             $names = array_merge($names, ['returning', 'return received', 'return missing', 'Return', 'return']);
         } elseif ($flag === 'counts_as_active') {

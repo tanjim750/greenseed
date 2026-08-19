@@ -122,6 +122,31 @@ class OrderController extends Controller
         return 'Shipped';
     }
 
+    private function permanentDeleteRequiredStatus(): ?string
+    {
+        $requiredStatus = trim((string) config('orders.permanent_delete_required_status', 'Trash'));
+
+        if ($requiredStatus === '') {
+            return null;
+        }
+
+        foreach (OrderStatus::activeOptions(false) as $statusName => $label) {
+            if (strtolower((string) $statusName) === strtolower($requiredStatus)) {
+                return (string) $statusName;
+            }
+        }
+
+        return 'Trash';
+    }
+
+    private function canPermanentlyDeleteOrder(Order $order): bool
+    {
+        $requiredStatus = $this->permanentDeleteRequiredStatus();
+
+        return $requiredStatus === null
+            || strtolower((string) $order->status) === strtolower($requiredStatus);
+    }
+
     private function getActiveWorkerIds($allowedWorkers = [])
     {
         if (empty($allowedWorkers)) return collect([]);
@@ -966,11 +991,10 @@ class OrderController extends Controller
     public function restore_order(Request $request)
     {
         $restore_order = Order::where('id', $request->id)->withTrashed()->first();
-        $restore_order_details = OrderDetails::where('order_id', $restore_order->id)->withTrashed()->get();
+        $restore_order_details = OrderDetails::where('order_id', $restore_order->id)->get();
 
         foreach ($restore_order_details as $restore_details) {
             $this->util->increaseProductStock($restore_details->product_id, $restore_details->variation_id, $restore_details->quantity);
-            $restore_details->restore();
         }
 
         $restore_order->restore();
@@ -986,11 +1010,11 @@ class OrderController extends Controller
             DB::beginTransaction();
 
             $del_orders = Order::where('id', $id)->withTrashed()->first();
-            $del_order_details = OrderDetails::where('order_id', $id)->withTrashed()->get();
+            $del_order_details = OrderDetails::where('order_id', $id)->get();
 
             foreach ($del_order_details as $del_details) {
                 $this->util->decreaseProductStock($del_details->product_id, $del_details->variation_id, $del_details->quantity);
-                $del_details->forceDelete();
+                $del_details->delete();
             }
 
             $del_orders->forceDelete();
@@ -1002,6 +1026,93 @@ class OrderController extends Controller
             return response()->json(['status' => true, 'msg' => 'Order Is Deleted Permanently!!']);
         } catch (\Exception $e) {
             DB::rollback();
+            return response()->json(['status' => false, 'msg' => $e->getMessage()]);
+        }
+    }
+
+    public function forceDelWithStatusRule($id)
+    {
+        try {
+            if (!auth()->user()->can('order.delete')) abort(403, 'unauthorized');
+
+            $order = Order::where('id', $id)->withTrashed()->firstOrFail();
+
+            if (!$this->canPermanentlyDeleteOrder($order)) {
+                $requiredStatus = $this->permanentDeleteRequiredStatus();
+
+                return response()->json([
+                    'status' => false,
+                    'msg' => "Order must be in {$requiredStatus} status before permanent delete.",
+                ]);
+            }
+
+            $details = OrderDetails::where('order_id', $id)->get(['product_id', 'variation_id', 'quantity']);
+            $stockCompensationMultiplier = $order->trashed()
+                ? 1
+                : (!empty(OrderStatus::forStatus($order->status)['reduces_stock']) ? 2 : 1);
+
+            $response = $this->forceDel($id);
+            $payload = $response->getData(true);
+
+            if (!empty($payload['status'])) {
+                foreach ($details as $detail) {
+                    $this->util->increaseProductStock(
+                        $detail->product_id,
+                        $detail->variation_id,
+                        $detail->quantity * $stockCompensationMultiplier
+                    );
+                }
+            }
+
+            return $response;
+        } catch (\Exception $e) {
+            return response()->json(['status' => false, 'msg' => $e->getMessage()]);
+        }
+    }
+
+    public function deleteAllOrder2()
+    {
+        try {
+            if (!auth()->user()->can('order.delete')) abort(403, 'unauthorized');
+
+            $orderIds = request('order_ids', []);
+            if (empty($orderIds)) {
+                return response()->json(['status' => false, 'msg' => 'Please Select An Order First !']);
+            }
+
+            $orders = Order::whereIn('id', $orderIds)->withTrashed()->get();
+            if ($orders->isEmpty()) {
+                return response()->json(['status' => false, 'msg' => 'No matching orders found.']);
+            }
+
+            $requiredStatus = $this->permanentDeleteRequiredStatus();
+            $blockedOrders = $orders
+                ->filter(fn ($order) => !$this->canPermanentlyDeleteOrder($order))
+                ->pluck('invoice_no')
+                ->filter()
+                ->values();
+
+            if ($blockedOrders->isNotEmpty()) {
+                return response()->json([
+                    'status' => false,
+                    'msg' => 'Permanent delete requires ' . $requiredStatus . ' status. Blocked invoice(s): ' . $blockedOrders->implode(', '),
+                ]);
+            }
+
+            $deleted = 0;
+            foreach ($orders as $order) {
+                $response = $this->forceDelWithStatusRule($order->id);
+                $payload = $response->getData(true);
+
+                if (empty($payload['status'])) {
+                    return $response;
+                }
+
+                $deleted++;
+            }
+
+            return response()->json(['status' => true, 'msg' => "{$deleted} order(s) deleted permanently."]);
+        } catch (\Exception $e) {
             return response()->json(['status' => false, 'msg' => $e->getMessage()]);
         }
     }
