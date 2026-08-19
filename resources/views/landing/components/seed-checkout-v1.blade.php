@@ -8,15 +8,15 @@
     $selectedProduct = $resolvedData['product'] ?? null;
     $productId = $productIds->first() ?: ($selectedProduct['id'] ?? null);
     $availableStock = is_numeric($selectedProduct['stock'] ?? null) ? (int) $selectedProduct['stock'] : null;
-    $displayPackages = $packages->map(function ($package) use ($selectedProduct) {
+    $displayPackages = $packages->map(function ($package) use ($selectedProduct, $definition, $render) {
         $quantity = max(1, (int) ($package['quantity'] ?? 1));
 
         if (!$selectedProduct) {
             return $package;
         }
 
-        $unitPrice = (float) ($selectedProduct['price'] ?? 0);
-        $totalPrice = $unitPrice * $quantity;
+        $unitPrice = (float) ($selectedProduct['order_base_price'] ?? $selectedProduct['price'] ?? 0);
+        $priceDisplay = $render->checkoutPackagePrice($package, $definition, $unitPrice, $quantity);
 
         return array_merge($package, [
             'title' => $quantity > 1
@@ -26,7 +26,9 @@
                 ?? ($selectedProduct['sku']
                     ? 'SKU: ' . $selectedProduct['sku']
                     : ($selectedProduct['availability_text'] ?? '')),
-            'price' => function_exists('priceFormate') ? priceFormate($totalPrice) : number_format($totalPrice, 2),
+            'price' => $priceDisplay['price'],
+            'original_price' => $priceDisplay['original_price'],
+            'has_custom_price' => $priceDisplay['has_custom_price'],
         ]);
     })->filter(function ($package) use ($selectedProduct, $availableStock) {
         if (!$selectedProduct) {
@@ -58,8 +60,9 @@
 
 <section
     class="landing-component seed-checkout {{ $scope }}"
-    id="order-form"
+    id="{{ $render->checkoutAnchorId($component) }}"
     data-landing-component
+    data-landing-component-role="checkout-form"
     data-component-id="{{ $component->source_component_id ?? $component->id }}"
     data-published-version-id="{{ $component->published_version_id ?? '' }}"
     data-component-key="{{ $definition->key() }}"
@@ -80,8 +83,8 @@
         <form class="seed-order-grid" data-landing-order-form>
             <input type="hidden" name="product_id" value="{{ $productId ?? '' }}">
 
-            <div class="seed-order-column">
-                <div class="seed-step-heading">
+            <div class="seed-order-column seed-order-customer">
+                <div class="seed-step-heading seed-order-customer-heading">
                     <span>১</span>
                     <h3>{{ $content['customer_heading'] ?? '' }}</h3>
                 </div>
@@ -110,14 +113,14 @@
                 </div>
             </div>
 
-            <div class="seed-order-column">
-                <div class="seed-step-heading">
+            <div class="seed-order-column seed-order-product">
+                <div class="seed-step-heading seed-order-product-heading">
                     <span>২</span>
                     <h3>{{ $content['product_heading'] ?? '' }}</h3>
                 </div>
 
                 @if(!$selectedProduct || $displayPackages->isEmpty())
-                    <div class="seed-selected-product seed-selected-product-empty">
+                    <div class="seed-selected-product seed-selected-product-empty seed-order-product-choice">
                         <span class="material-symbols-outlined">inventory_2</span>
                         <div>
                             <strong>{{ $selectedProduct ? 'No available package' : 'No product selected' }}</strong>
@@ -125,7 +128,7 @@
                         </div>
                     </div>
                 @else
-                    <div class="seed-package-list">
+                    <div class="seed-package-list seed-order-product-choice">
                         @foreach($displayPackages as $package)
                             @php
                                 $quantity = (int) ($package['quantity'] ?? 1);
@@ -140,30 +143,35 @@
                                         <small>{{ $package['subtitle'] }}</small>
                                     @endif
                                 </span>
-                                <b>{{ $package['price'] ?? '' }}</b>
+                                <span class="seed-package-price">
+                                    @if(!empty($package['has_custom_price']) && !empty($package['original_price']) && $package['original_price'] !== ($package['price'] ?? null))
+                                        <s>{{ $package['original_price'] }}</s>
+                                    @endif
+                                    <b>{{ $package['price'] ?? '' }}</b>
+                                </span>
                             </label>
                         @endforeach
                     </div>
                 @endif
 
-                <div class="seed-summary-card">
+                <div class="seed-summary-card seed-order-summary">
                     <h4>{{ $content['summary_title'] ?? '' }}</h4>
                     <div><span>পণ্য মূল্য</span><span data-seed-checkout-subtotal>{{ $selectedPackage['price'] ?? '' }}</span></div>
                     <div><span>ডেলিভারি চার্জ</span><span>ফ্রি</span></div>
                     <strong><span>মোট</span><span data-seed-checkout-total>{{ $selectedPackage['price'] ?? '' }}</span></strong>
                 </div>
 
-                <p class="seed-payment-note">
+                <p class="seed-payment-note seed-order-payment">
                     <span class="material-symbols-outlined">payment</span>
                     {{ $content['payment_note'] ?? '' }}
                 </p>
 
-                <button type="submit" @disabled(!$selectedProduct || $displayPackages->isEmpty())>
+                <button class="seed-order-submit" type="submit" @disabled(!$selectedProduct || $displayPackages->isEmpty())>
                     {{ $content['button_text'] ?? 'Order Now' }}
                     <span class="material-symbols-outlined">shopping_cart_checkout</span>
                 </button>
 
-                <div class="landing-order-message" data-order-submission-message aria-live="polite"></div>
+                <div class="landing-order-message seed-order-message" data-order-submission-message aria-live="polite"></div>
             </div>
         </form>
     </div>

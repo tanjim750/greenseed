@@ -45,6 +45,7 @@ final class SeedOfferHeroV1 extends BaseLandingComponent
                 'text_color' => ['type' => 'color', 'label' => 'Text Color'],
             ]),
             'settings' => [
+                'show_countdown' => ['type' => 'boolean', 'label' => 'Show Countdown'],
                 'countdown.duration_hours' => ['type' => 'number', 'label' => 'Countdown Hours', 'min' => 1],
                 'countdown.starts_at' => ['type' => 'datetime', 'label' => 'Starts At'],
             ],
@@ -72,6 +73,7 @@ final class SeedOfferHeroV1 extends BaseLandingComponent
                 'text_color' => '#ffffff',
             ]),
             'settings' => [
+                'show_countdown' => true,
                 'countdown' => [
                     'duration_hours' => 4,
                     'starts_at' => null,
@@ -102,6 +104,7 @@ final class SeedOfferHeroV1 extends BaseLandingComponent
             'style.text_color' => ['required'],
             'style.*' => [$this->styleValueRule()],
             'settings' => ['required', 'array'],
+            'settings.show_countdown' => ['required', 'boolean'],
             'settings.countdown' => ['required', 'array'],
             'settings.countdown.duration_hours' => ['required', 'integer', 'min:1', 'max:8760'],
             'settings.countdown.starts_at' => ['nullable', 'date'],

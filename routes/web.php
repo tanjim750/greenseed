@@ -265,6 +265,8 @@ Route::group(['prefix' => 'admin','middleware' => 'auth','as'=>'admin.'], functi
         ->name('dynamic_landing_pages.index');
     Route::post('/dynamic-landing-pages', [\App\Http\Controllers\DynamicLandingPageEditorController::class, 'store'])
         ->name('dynamic_landing_pages.store');
+    Route::post('/dynamic-landing-pages/{page}/duplicate', [\App\Http\Controllers\DynamicLandingPageEditorController::class, 'duplicate'])
+        ->name('dynamic_landing_pages.duplicate');
     Route::get('/dynamic-landing-pages/{page}', [\App\Http\Controllers\DynamicLandingPageEditorController::class, 'show'])
         ->name('dynamic_landing_pages.show');
     Route::patch('/dynamic-landing-pages/{page}', [\App\Http\Controllers\DynamicLandingPageEditorController::class, 'update'])

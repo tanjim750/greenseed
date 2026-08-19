@@ -3,11 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\DynamicLandingPage;
+use App\Models\DynamicLandingPageComponent;
 use App\Services\Landing\LandingPublishedPageCache;
 use App\Services\Landing\LandingTheme;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class DynamicLandingPageEditorController extends Controller
@@ -109,6 +112,41 @@ class DynamicLandingPageEditorController extends Controller
         ]);
     }
 
+    public function duplicate(Request $request, DynamicLandingPage $page): JsonResponse
+    {
+        $page->load([
+            'components' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
+        ]);
+
+        $copy = DB::transaction(function () use ($request, $page) {
+            $copy = DynamicLandingPage::create([
+                'name' => $this->duplicateName($page->name),
+                'slug' => $this->duplicateSlug($page->slug),
+                'status' => 'draft',
+                'theme' => $this->theme->normalize($page->theme ?? []),
+                'seo' => $page->seo ?? [],
+                'created_by' => $request->user()?->id,
+                'updated_by' => $request->user()?->id,
+            ]);
+
+            $page->components->each(function (DynamicLandingPageComponent $component) use ($copy) {
+                $copy->components()->create([
+                    'component_key' => $component->component_key,
+                    'instance_scope' => $this->uniqueComponentScope(),
+                    'sort_order' => $component->sort_order,
+                    'config' => $component->config ?? [],
+                    'is_enabled' => $component->is_enabled,
+                ]);
+            });
+
+            return $copy;
+        });
+
+        return response()->json([
+            'data' => $this->serializePage($copy->fresh(['components'])->loadCount('components')),
+        ], 201);
+    }
+
     private function validatedPageData(Request $request, ?DynamicLandingPage $page = null): array
     {
         return $request->validate([
@@ -177,5 +215,42 @@ class DynamicLandingPageEditorController extends Controller
             'is_enabled' => (bool) $component->is_enabled,
             'updated_at' => $component->updated_at?->toISOString(),
         ];
+    }
+
+    private function duplicateName(string $name): string
+    {
+        $base = Str::limit($name, 240, '');
+        $candidate = "{$base} Copy";
+        $suffix = 2;
+
+        while (DynamicLandingPage::where('name', $candidate)->exists()) {
+            $candidate = Str::limit($base, 235, '') . " Copy {$suffix}";
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function duplicateSlug(string $slug): string
+    {
+        $base = Str::limit($slug, 238, '');
+        $candidate = "{$base}-copy";
+        $suffix = 2;
+
+        while (DynamicLandingPage::where('slug', $candidate)->exists()) {
+            $candidate = Str::limit($base, 235, '') . "-copy-{$suffix}";
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function uniqueComponentScope(): string
+    {
+        do {
+            $scope = 'cmp_' . Str::lower(Str::random(12));
+        } while (DynamicLandingPageComponent::where('instance_scope', $scope)->exists());
+
+        return $scope;
     }
 }

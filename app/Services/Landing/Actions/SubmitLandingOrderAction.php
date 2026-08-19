@@ -2,6 +2,7 @@
 
 namespace App\Services\Landing\Actions;
 
+use App\Http\Traits\DetectsOrderSource;
 use App\Jobs\SendOrderNotification;
 use App\Models\DeliveryCharge;
 use App\Models\DynamicLandingPageComponent;
@@ -13,16 +14,23 @@ use App\Models\Variation;
 use App\Services\Landing\Contracts\LandingTransactionalActionHandler;
 use App\Services\Landing\LandingActionResult;
 use App\Services\Landing\LandingComponentConfigService;
+use App\Services\Landing\LandingComponentRegistry;
+use App\Services\Landing\LandingRenderSupport;
 use App\Utils\ModulUtil;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class SubmitLandingOrderAction implements LandingTransactionalActionHandler
 {
+    use DetectsOrderSource;
+
     public function __construct(
         private LandingComponentConfigService $configService,
+        private LandingComponentRegistry $componentRegistry,
+        private LandingRenderSupport $renderSupport,
         private ModulUtil $modulUtil
     ) {
     }
@@ -39,6 +47,8 @@ final class SubmitLandingOrderAction implements LandingTransactionalActionHandle
             'seed-checkout-v1',
             'seed-checkout-v2',
             'seed-mobile-checkout-sticky-v1',
+            'bari12-checkout-form-v1',
+            'sheikh-checkout-form-v1',
         ];
     }
 
@@ -75,14 +85,17 @@ final class SubmitLandingOrderAction implements LandingTransactionalActionHandle
         $this->ensureProductAllowed($component, $product);
 
         $variation = $this->resolveVariation($product, $data['variation_id'] ?? null);
-        $this->ensureOrderLimits($product, $variation, $quantity);
         $this->ensureStockAvailable($product, $variation, $quantity);
 
-        $user = $this->resolveCustomer($data);
-        $priceInfo = $this->resolvePrice($product, $variation);
-        $lineTotal = $priceInfo['unit_price'] * $quantity;
-        $discountTotal = $priceInfo['discount'] * $quantity;
+        $priceInfo = $this->resolveCustomPackagePriceDiscount($component, $product, $variation, $quantity)
+            ?? $this->resolvePrice($product, $variation);
+        $lineTotal = $priceInfo['line_total'] ?? round($priceInfo['unit_price'] * $quantity, 2);
+        $discountTotal = $priceInfo['discount_total'] ?? round($priceInfo['discount'] * $quantity, 2);
+        $originalAmount = $priceInfo['amount'] ?? round($lineTotal + $discountTotal, 2);
+        $this->ensureOrderLimits($quantity, $lineTotal);
+        $this->rejectRecentDuplicateOrder($data, $request);
         $shippingCharge = $this->resolveShippingCharge($product, $quantity, $data['delivery_charge_id'] ?? null);
+        $user = $this->resolveCustomer($data);
 
         $orderData = [
             'user_id' => $user->id,
@@ -91,28 +104,22 @@ final class SubmitLandingOrderAction implements LandingTransactionalActionHandle
             'first_name' => $data['first_name'],
             'mobile' => $data['mobile'],
             'shipping_address' => $data['shipping_address'],
+            'ip_address' => $request->ip(),
             'note' => $data['note'] ?? null,
             'delivery_charge_id' => $data['delivery_charge_id'] ?? null,
             'payment_method' => 'cod',
             'payment_status' => 'due',
             'status' => 'pending',
-            'amount' => $lineTotal + $discountTotal,
+            'amount' => $originalAmount,
             'discount' => $discountTotal,
             'shipping_charge' => $shippingCharge,
             'final_amount' => $lineTotal + $shippingCharge,
             'assign_user_id' => null,
         ];
 
-        if (Schema::hasColumn('orders', 'order_source')) {
-            $orderData['order_source'] = 'dynamic_landing_page';
-        }
+        $this->applyOrderSource($orderData, $request);
 
-        if (Schema::hasColumn('orders', 'referer_url')) {
-            $orderData['referer_url'] = (string) $request->headers->get('referer', '');
-        }
-
-        $order = Order::create($this->onlyExistingColumns('orders', $orderData));
-        $order->details()->create($this->onlyExistingColumns('order_details', [
+        $orderDetailData = [
             'product_id' => $product->id,
             'quantity' => $quantity,
             'unit_price' => $priceInfo['unit_price'],
@@ -120,7 +127,9 @@ final class SubmitLandingOrderAction implements LandingTransactionalActionHandle
             'is_stock' => $product->is_stock ?? 1,
             'purchase_price' => $priceInfo['purchase_price'],
             'variation_id' => $variation?->id,
-        ]));
+        ];
+
+        $order = $this->createOrReuseIncompleteOrder($user, $data, $orderData, $orderDetailData);
 
         $this->decrementStock($product, $variation, $quantity);
         $this->modulUtil->orderPayment($order, []);
@@ -204,11 +213,9 @@ final class SubmitLandingOrderAction implements LandingTransactionalActionHandle
             ->contains($product->id);
     }
 
-    private function ensureOrderLimits(Product $product, ?Variation $variation, int $quantity): void
+    private function ensureOrderLimits(int $quantity, float $lineTotal): void
     {
         $info = Information::first();
-        $priceInfo = $this->resolvePrice($product, $variation);
-        $lineTotal = $priceInfo['unit_price'] * $quantity;
 
         if (($info?->max_order_qty ?? 0) > 0 && $quantity > (int) $info->max_order_qty) {
             throw ValidationException::withMessages([
@@ -221,6 +228,83 @@ final class SubmitLandingOrderAction implements LandingTransactionalActionHandle
                 'quantity' => ["Your order amount cannot exceed {$info->max_order_amount}."],
             ]);
         }
+    }
+
+    private function rejectRecentDuplicateOrder(array $data, Request $request): void
+    {
+        $info = Information::first();
+
+        if (!$info) {
+            return;
+        }
+
+        $mobile = (string) ($data['mobile'] ?? '');
+        $ipAddress = (string) $request->ip();
+        $appliesMobileCheck = (int) ($info->is_mobile_check ?? 0) === 1 && $mobile !== '';
+        $appliesIpCheck = (int) ($info->is_ip_check ?? 0) === 1 && $ipAddress !== '';
+
+        if (!$appliesMobileCheck && !$appliesIpCheck) {
+            return;
+        }
+
+        $limitMinutes = (int) ($info->time_limit ?? 60);
+        $limitMinutes = $limitMinutes > 0 ? $limitMinutes : 60;
+
+        $recentOrder = Order::query()
+            ->whereNot('status', 'incomplete')
+            ->where(function ($query) use ($appliesMobileCheck, $appliesIpCheck, $mobile, $ipAddress) {
+                if ($appliesMobileCheck) {
+                    $query->where('mobile', $mobile);
+                }
+
+                if ($appliesIpCheck) {
+                    $appliesMobileCheck
+                        ? $query->orWhere('ip_address', $ipAddress)
+                        : $query->where('ip_address', $ipAddress);
+                }
+            })
+            ->where('created_at', '>=', now()->subMinutes($limitMinutes))
+            ->latest()
+            ->first();
+
+        if (!$recentOrder) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'mobile' => ['You already have a recent order. Please try again later.'],
+        ]);
+    }
+
+    private function createOrReuseIncompleteOrder(
+        User $user,
+        array $data,
+        array $orderData,
+        array $orderDetailData
+    ): Order {
+        $order = Order::query()
+            ->where('status', 'incomplete')
+            ->where(function ($query) use ($user, $data) {
+                $query->where('user_id', $user->id);
+
+                if (!empty($data['mobile'])) {
+                    $query->orWhere('mobile', $data['mobile']);
+                }
+            })
+            ->latest()
+            ->lockForUpdate()
+            ->first();
+
+        if (!$order) {
+            $order = Order::create($this->onlyExistingColumns('orders', $orderData));
+        } else {
+            $order->details()->delete();
+            $order->update($this->onlyExistingColumns('orders', $orderData));
+        }
+
+        $order->details()->create($this->onlyExistingColumns('order_details', $orderDetailData));
+
+        return $order;
     }
 
     private function ensureStockAvailable(Product $product, ?Variation $variation, int $quantity): void
@@ -298,6 +382,70 @@ final class SubmitLandingOrderAction implements LandingTransactionalActionHandle
         ];
     }
 
+    private function resolveCustomPackagePriceDiscount(
+        DynamicLandingPageComponent $component,
+        Product $product,
+        ?Variation $variation,
+        int $quantity
+    ): ?array {
+        $quantity = max(1, $quantity);
+        $storedContent = is_array($component->config['content'] ?? null)
+            ? $component->config['content']
+            : [];
+        $packages = $storedContent['packages'] ?? [];
+
+        if (!is_array($packages)) {
+            return null;
+        }
+
+        $package = collect($packages)->first(function ($package) use ($quantity) {
+            return is_array($package)
+                && max(1, (int) ($package['quantity'] ?? 1)) === $quantity
+                && array_key_exists('price', $package);
+        });
+
+        if (!is_array($package)) {
+            return null;
+        }
+
+        try {
+            $definition = $this->componentRegistry->get($component->component_key);
+        } catch (Throwable) {
+            $definition = null;
+        }
+
+        if ($definition && $this->renderSupport->customCheckoutPackagePrice($package, $definition) === null) {
+            return null;
+        }
+
+        $customTotal = $this->renderSupport->parseMoneyValue($package['price'] ?? null);
+
+        if ($customTotal === null || $customTotal <= 0) {
+            return null;
+        }
+
+        $originalUnitPrice = (float) ($variation?->price ?: $product->sell_price ?: $product->regular_price ?: 0);
+        $originalTotal = $originalUnitPrice * $quantity;
+
+        if ($originalTotal <= 0) {
+            return null;
+        }
+
+        $customTotal = min($customTotal, $originalTotal);
+        $unitPrice = round($customTotal / $quantity, 2);
+
+        return [
+            'unit_price' => $unitPrice,
+            'discount' => round(($originalTotal - $customTotal) / $quantity, 2),
+            'line_total' => $customTotal,
+            'discount_total' => max(0, round($originalTotal - $customTotal, 2)),
+            'amount' => $originalTotal,
+            'original_unit_price' => $originalUnitPrice,
+            'original_total' => $originalTotal,
+            'purchase_price' => (float) ($variation?->purchase_price ?? $product->purchase_price ?? $product->purchase_prices ?? 0),
+        ];
+    }
+
     private function resolveShippingCharge(Product $product, int $quantity, mixed $deliveryChargeId): float
     {
         if ((int) ($product->is_free_shipping ?? 0) === 1) {
@@ -317,6 +465,25 @@ final class SubmitLandingOrderAction implements LandingTransactionalActionHandle
     {
         return $product->status === null
             || in_array($product->status, [1, '1', true, 'active', 'Active'], true);
+    }
+
+    private function applyOrderSource(array &$orderData, Request $request): void
+    {
+        if (!Schema::hasColumn('orders', 'order_source')) {
+            if (Schema::hasColumn('orders', 'referer_url')) {
+                $orderData['referer_url'] = (string) $request->headers->get('referer', '');
+            }
+
+            return;
+        }
+
+        $source = $this->detectOrderSource();
+
+        $orderData['order_source'] = $source['source'];
+        $orderData['utm_source'] = $source['utm_source'];
+        $orderData['utm_medium'] = $source['utm_medium'];
+        $orderData['utm_campaign'] = $source['utm_campaign'];
+        $orderData['referer_url'] = $source['referer'] ?: (string) $request->headers->get('referer', '');
     }
 
     private function normalizeIds(mixed $ids): array

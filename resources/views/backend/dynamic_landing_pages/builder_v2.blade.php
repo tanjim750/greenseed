@@ -940,7 +940,7 @@
                 <button class="v2-icon-btn" type="button" disabled title="Redo"><i class="mdi mdi-redo"></i></button>
             </div>
             <button class="v2-btn v2-btn-light" type="button" id="v2PreviewBtn"><i class="mdi mdi-eye-outline"></i> Preview</button>
-            <button class="v2-btn v2-btn-primary" type="button" id="v2SaveBtn"><i class="mdi mdi-content-save-outline"></i> Save</button>
+            <button class="v2-btn v2-btn-primary" type="button" id="v2PublishBtn"><i class="mdi mdi-cloud-upload-outline"></i> Publish Page</button>
         </div>
     </header>
 
@@ -1052,7 +1052,7 @@
             </div>
 
             <div class="v2-sidebar-footer">
-                <button class="v2-btn v2-btn-primary" type="button" id="v2PublishBtn"><i class="mdi mdi-cloud-upload-outline"></i> Publish Page</button>
+                <button class="v2-btn v2-btn-primary" type="button" id="v2SaveBtn"><i class="mdi mdi-content-save-outline"></i> Save</button>
                 <a class="v2-btn v2-btn-light" href="{{ route('admin.dynamic_landing_builder.pages') }}"><i class="mdi mdi-chevron-left"></i> Back to Dashboard</a>
             </div>
         </aside>
@@ -1185,9 +1185,17 @@
             }
 
             function componentPreviewUrl(componentId) {
-                return routes.componentPreview
+                const component = (state.page?.components || [])
+                    .find((item) => String(item.id) === String(componentId));
+                const url = routes.componentPreview
                     .replace('__PAGE_ID__', encodeURIComponent(state.page.id))
                     .replace('__COMPONENT_ID__', encodeURIComponent(componentId));
+
+                if (!component?.updated_at) {
+                    return url;
+                }
+
+                return `${url}?v=${encodeURIComponent(component.updated_at)}`;
             }
 
             function catalogPreviewUrl(componentKey) {
@@ -1573,12 +1581,20 @@
             }
 
             function repeaterKeysFor(field, rows) {
+                if (Array.isArray(field.meta.fields) && field.meta.fields.length) {
+                    return field.meta.fields.map((key) => String(key)).filter(Boolean);
+                }
+
                 const keys = new Set();
                 const defaults = repeaterValuesFor(field, { [field.section]: { [field.key]: field.meta.default ?? [] } });
 
                 [...rows, ...defaults].forEach((row) => {
                     if (row && typeof row === 'object' && !Array.isArray(row)) {
-                        Object.keys(row).forEach((key) => keys.add(key));
+                        Object.keys(row).forEach((key) => {
+                            if (!String(key).startsWith('__')) {
+                                keys.add(key);
+                            }
+                        });
                     }
                 });
 
@@ -1648,16 +1664,39 @@
                 const hidden = root.querySelector('.v2-schema-field[data-field-type]');
                 const keys = JSON.parse(root.dataset.repeaterKeys || '[]');
                 const types = JSON.parse(root.dataset.repeaterTypes || '{}');
-                const rows = Array.from(root.querySelectorAll('[data-repeater-row]')).map((row) => {
+                const previousRows = JSON.parse(hidden?.value || '[]');
+                const rows = Array.from(root.querySelectorAll('[data-repeater-row]')).map((row, index) => {
                     if (!keys.length) {
                         return row.querySelector('[data-repeater-value]')?.value.trim() ?? '';
                     }
 
-                    return keys.reduce((item, key) => {
+                    const previousRow = previousRows[index] && typeof previousRows[index] === 'object' && !Array.isArray(previousRows[index])
+                        ? previousRows[index]
+                        : {};
+                    const item = keys.reduce((item, key) => {
                         const value = row.querySelector(`[data-repeater-key="${CSS.escape(key)}"]`)?.value.trim() ?? '';
                         item[key] = coerceRepeaterValue(value, types[key]);
                         return item;
                     }, {});
+
+                    Object.keys(previousRow).forEach((key) => {
+                        if (String(key).startsWith('__')) {
+                            item[key] = previousRow[key];
+                        }
+                    });
+
+                    if (keys.includes('price')) {
+                        const price = String(item.price ?? '').trim();
+                        const previousPrice = String(previousRow.price ?? '').trim();
+
+                        if (price === '') {
+                            delete item.__price_custom;
+                        } else if (!previousRow.price || price !== previousPrice) {
+                            item.__price_custom = true;
+                        }
+                    }
+
+                    return item;
                 });
 
                 hidden.value = JSON.stringify(rows);
@@ -1904,7 +1943,11 @@
             function reloadPreviewFrames() {
                 document.querySelectorAll('.v2-component-preview iframe')
                     .forEach((frame) => {
-                        frame.src = frame.src;
+                        const componentId = frame.closest('.v2-component[data-component-id]')?.dataset.componentId;
+
+                        if (componentId) {
+                            frame.src = componentPreviewUrl(componentId);
+                        }
                     });
             }
 
@@ -1912,7 +1955,7 @@
                 const frame = el.components.querySelector(`.v2-component[data-component-id="${componentId}"] iframe`);
 
                 if (frame) {
-                    frame.src = frame.src;
+                    frame.src = componentPreviewUrl(componentId);
                 }
             }
 

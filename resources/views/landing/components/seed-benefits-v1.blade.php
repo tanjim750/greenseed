@@ -38,7 +38,7 @@
 
             @foreach($cards as $card)
                 <article class="seed-small-card">
-                    <span class="material-symbols-outlined">{{ $card['icon'] ?? 'eco' }}</span>
+                    <span class="material-symbols-outlined">eco</span>
                     <h4>{{ $card['title'] ?? '' }}</h4>
                     <p>{{ $card['description'] ?? '' }}</p>
                 </article>
@@ -47,7 +47,7 @@
             <div class="seed-trust-stack">
                 @foreach($trustCards as $card)
                     <article class="seed-trust-card">
-                        <span class="material-symbols-outlined">{{ $card['icon'] ?? 'verified' }}</span>
+                        <span class="material-symbols-outlined">verified</span>
                         <div>
                             <h4>{{ $card['title'] ?? '' }}</h4>
                             <p>{{ $card['description'] ?? '' }}</p>

@@ -19,7 +19,7 @@
             <ul>
                 @foreach($items as $item)
                     <li>
-                        <span class="material-symbols-outlined">{{ $item['icon'] ?? 'check_circle' }}</span>
+                        <span class="material-symbols-outlined">check_circle</span>
                         <p>{{ $item['text'] ?? '' }}</p>
                     </li>
                 @endforeach

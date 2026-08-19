@@ -8,10 +8,6 @@ abstract class SeedMobileChecklistV1 extends BaseLandingComponent
 
     abstract protected function componentName(): string;
 
-    abstract protected function defaultHeading(): string;
-
-    abstract protected function defaultItems(): array;
-
     public function key(): string
     {
         return $this->componentKey();
@@ -37,7 +33,7 @@ abstract class SeedMobileChecklistV1 extends BaseLandingComponent
         return [
             'content' => [
                 'heading' => ['type' => 'text', 'label' => 'Heading'],
-                'items' => ['type' => 'repeater', 'label' => 'Checklist Items'],
+                'items' => ['type' => 'repeater', 'label' => 'Checklist Items', 'fields' => ['text']],
             ],
             'style' => array_merge($this->commonStyleSchema(), [
                 'card_background' => ['type' => 'color', 'label' => 'Card Background'],
@@ -51,8 +47,8 @@ abstract class SeedMobileChecklistV1 extends BaseLandingComponent
     {
         return [
             'content' => [
-                'heading' => $this->defaultHeading(),
-                'items' => $this->defaultItems(),
+                'heading' => '',
+                'items' => [],
             ],
             'style' => array_merge($this->commonStyleDefaults(), [
                 'card_background' => '#ffffff',
@@ -70,7 +66,6 @@ abstract class SeedMobileChecklistV1 extends BaseLandingComponent
             'content' => ['required', 'array'],
             'content.heading' => ['nullable', 'string', 'max:180'],
             'content.items' => ['nullable', 'array', 'max:12'],
-            'content.items.*.icon' => ['nullable', 'string', 'max:80'],
             'content.items.*.text' => ['nullable', 'string', 'max:300'],
             'style' => ['required', 'array'],
             'style.*' => [$this->styleValueRule()],

@@ -8,19 +8,21 @@
     $selectedProduct = $resolvedData['product'] ?? null;
     $productId = $productIds->first() ?: ($selectedProduct['id'] ?? null);
     $availableStock = is_numeric($selectedProduct['stock'] ?? null) ? (int) $selectedProduct['stock'] : null;
-    $displayPackages = $packages->map(function ($package) use ($selectedProduct) {
+    $displayPackages = $packages->map(function ($package) use ($selectedProduct, $definition, $render) {
         $quantity = max(1, (int) ($package['quantity'] ?? 1));
 
         if (!$selectedProduct) {
             return $package;
         }
 
-        $unitPrice = (float) ($selectedProduct['price'] ?? 0);
-        $totalPrice = $unitPrice * $quantity;
+        $unitPrice = (float) ($selectedProduct['order_base_price'] ?? $selectedProduct['price'] ?? 0);
+        $priceDisplay = $render->checkoutPackagePrice($package, $definition, $unitPrice, $quantity);
 
         return array_merge($package, [
             'title' => $package['title'] ?: ($quantity > 1 ? $quantity . ' x ' . ($selectedProduct['name'] ?? '') : ($selectedProduct['name'] ?? '')),
-            'price' => function_exists('priceFormate') ? priceFormate($totalPrice) : number_format($totalPrice, 2),
+            'price' => $priceDisplay['price'],
+            'original_price' => $priceDisplay['original_price'],
+            'has_custom_price' => $priceDisplay['has_custom_price'],
         ]);
     })->filter(function ($package) use ($selectedProduct, $availableStock) {
         if (!$selectedProduct) {
@@ -46,7 +48,9 @@
 
 <section
     class="landing-component seed-mobile-block seed-mobile-checkout {{ $scope }}"
+    id="{{ $render->checkoutAnchorId($component) }}"
     data-landing-component
+    data-landing-component-role="checkout-form"
     data-component-id="{{ $component->source_component_id ?? $component->id }}"
     data-published-version-id="{{ $component->published_version_id ?? '' }}"
     data-component-key="{{ $definition->key() }}"
@@ -66,14 +70,7 @@
         <form data-landing-order-form>
             <input type="hidden" name="product_id" value="{{ $productId ?? '' }}">
 
-            <div class="seed-mobile-card seed-mobile-form-card">
-                <h2><span class="material-symbols-outlined">person</span>{{ $content['customer_heading'] ?? '' }}</h2>
-                <label><span>আপনার সম্পূর্ণ নাম *</span><input type="text" name="first_name" placeholder="আপনার নাম লিখুন" required></label>
-                <label><span>মোবাইল নাম্বার *</span><input type="tel" name="mobile" placeholder="০১৭XXXXXXXX" required></label>
-                <label><span>পূর্ণ ঠিকানা (জেলা ও থানা সহ) *</span><textarea name="shipping_address" rows="3" placeholder="বিস্তারিত ঠিকানা লিখুন" required></textarea></label>
-            </div>
-
-            <div class="seed-mobile-card">
+            <div class="seed-mobile-card seed-mobile-product-card">
                 <h2><span class="material-symbols-outlined">inventory_2</span>{{ $content['product_heading'] ?? '' }}</h2>
                 @if(!$selectedProduct || $displayPackages->isEmpty())
                     <div class="seed-mobile-empty-product">
@@ -98,7 +95,12 @@
                                     @if(!empty($package['subtitle']))
                                         <small>{{ $package['subtitle'] }}</small>
                                     @endif
-                                    <b>{{ $package['price'] ?? '' }}</b>
+                                    <span class="seed-mobile-package-price">
+                                        @if(!empty($package['has_custom_price']) && !empty($package['original_price']) && $package['original_price'] !== ($package['price'] ?? null))
+                                            <s>{{ $package['original_price'] }}</s>
+                                        @endif
+                                        <b>{{ $package['price'] ?? '' }}</b>
+                                    </span>
                                 </span>
                                 @if(!empty($package['badge']))
                                     <em>{{ $package['badge'] }}</em>
@@ -108,6 +110,13 @@
                         @endforeach
                     </div>
                 @endif
+            </div>
+
+            <div class="seed-mobile-card seed-mobile-form-card">
+                <h2><span class="material-symbols-outlined">person</span>{{ $content['customer_heading'] ?? '' }}</h2>
+                <label><span>আপনার সম্পূর্ণ নাম *</span><input type="text" name="first_name" placeholder="আপনার নাম লিখুন" required></label>
+                <label><span>মোবাইল নাম্বার *</span><input type="tel" name="mobile" placeholder="০১৭XXXXXXXX" required></label>
+                <label><span>পূর্ণ ঠিকানা (জেলা ও থানা সহ) *</span><textarea name="shipping_address" rows="3" placeholder="বিস্তারিত ঠিকানা লিখুন" required></textarea></label>
             </div>
 
             <div class="seed-mobile-card seed-mobile-summary">

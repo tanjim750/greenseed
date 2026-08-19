@@ -143,7 +143,9 @@ final class SeedMobileCheckoutStickyV1 extends BaseLandingComponent
             return ['product' => null];
         }
 
-        $price = (float) ($product->after_discount ?: $product->sell_price ?: $product->regular_price ?: 0);
+        $variation = $product->variations()->orderBy('id')->first();
+        $price = (float) ($variation?->after_discount_price ?: $product->after_discount ?: $variation?->price ?: $product->sell_price ?: $product->regular_price ?: 0);
+        $orderBasePrice = (float) ($variation?->price ?: $product->sell_price ?: $product->regular_price ?: 0);
 
         return [
             'product' => [
@@ -152,6 +154,7 @@ final class SeedMobileCheckoutStickyV1 extends BaseLandingComponent
                 'sku' => $product->sku,
                 'image_url' => function_exists('getImage') ? getImage('products', $product->image) : asset('products/' . $product->image),
                 'price' => $price,
+                'order_base_price' => $orderBasePrice,
                 'formatted_price' => function_exists('priceFormate') ? priceFormate($price) : number_format($price, 2),
                 'stock' => $product->total_stock,
                 'availability_text' => $product->availability_text,

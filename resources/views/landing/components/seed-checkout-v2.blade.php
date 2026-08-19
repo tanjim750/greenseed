@@ -8,21 +8,23 @@
     $selectedProduct = $resolvedData['product'] ?? null;
     $productId = $productIds->first() ?: ($selectedProduct['id'] ?? null);
     $availableStock = is_numeric($selectedProduct['stock'] ?? null) ? (int) $selectedProduct['stock'] : null;
-    $displayPackages = $packages->map(function ($package) use ($selectedProduct) {
+    $displayPackages = $packages->map(function ($package) use ($selectedProduct, $definition, $render) {
         $quantity = max(1, (int) ($package['quantity'] ?? 1));
 
         if (!$selectedProduct) {
             return $package;
         }
 
-        $unitPrice = (float) ($selectedProduct['price'] ?? 0);
-        $totalPrice = $unitPrice * $quantity;
+        $unitPrice = (float) ($selectedProduct['order_base_price'] ?? $selectedProduct['price'] ?? 0);
+        $priceDisplay = $render->checkoutPackagePrice($package, $definition, $unitPrice, $quantity);
 
         return array_merge($package, [
             'title' => $package['title'] ?: ($quantity > 1
                 ? $quantity . ' x ' . ($selectedProduct['name'] ?? '')
                 : ($selectedProduct['name'] ?? '')),
-            'price' => function_exists('priceFormate') ? priceFormate($totalPrice) : number_format($totalPrice, 2),
+            'price' => $priceDisplay['price'],
+            'original_price' => $priceDisplay['original_price'],
+            'has_custom_price' => $priceDisplay['has_custom_price'],
         ]);
     })->filter(function ($package) use ($selectedProduct, $availableStock) {
         if (!$selectedProduct) {
@@ -55,7 +57,9 @@
 
 <section
     class="landing-component seed-checkout-v2 {{ $scope }}"
+    id="{{ $render->checkoutAnchorId($component) }}"
     data-landing-component
+    data-landing-component-role="checkout-form"
     data-component-id="{{ $component->source_component_id ?? $component->id }}"
     data-published-version-id="{{ $component->published_version_id ?? '' }}"
     data-component-key="{{ $definition->key() }}"
@@ -86,7 +90,7 @@
             <input type="hidden" name="product_id" value="{{ $productId ?? '' }}">
 
             <div class="seed-v2-left">
-                <section class="seed-v2-card">
+                <section class="seed-v2-card seed-v2-customer-card">
                     <div class="seed-v2-card-title">
                         <span class="material-symbols-outlined">person</span>
                         <h3>{{ $content['customer_heading'] ?? '' }}</h3>
@@ -118,7 +122,7 @@
             </div>
 
             <div class="seed-v2-right">
-                <section class="seed-v2-card">
+                <section class="seed-v2-card seed-v2-product-card">
                     <h3>{{ $content['product_heading'] ?? '' }}</h3>
 
                     @if(!$selectedProduct || $displayPackages->isEmpty())
@@ -144,7 +148,12 @@
                                         @if(!empty($package['subtitle']))
                                             <small>{{ $package['subtitle'] }}</small>
                                         @endif
-                                        <b>{{ $package['price'] ?? '' }}</b>
+                                        <span class="seed-v2-package-price">
+                                            @if(!empty($package['has_custom_price']) && !empty($package['original_price']) && $package['original_price'] !== ($package['price'] ?? null))
+                                                <s>{{ $package['original_price'] }}</s>
+                                            @endif
+                                            <b>{{ $package['price'] ?? '' }}</b>
+                                        </span>
                                     </span>
                                     <span class="seed-v2-radio" aria-hidden="true"><i></i></span>
                                 </label>
@@ -153,7 +162,7 @@
                     @endif
                 </section>
 
-                <section class="seed-v2-card">
+                <section class="seed-v2-card seed-v2-summary-card">
                     <h3>{{ $content['summary_heading'] ?? '' }}</h3>
                     <div class="seed-v2-summary">
                         <div><span>উপ-মোট (Subtotal)</span><strong data-seed-v2-subtotal>{{ $selectedPrice }}</strong></div>

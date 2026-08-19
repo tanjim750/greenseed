@@ -26,7 +26,7 @@
         <div class="seed-support-badges">
             @foreach($badges as $badge)
                 <span>
-                    <span class="material-symbols-outlined">{{ $badge['icon'] ?? 'verified' }}</span>
+                    <span class="material-symbols-outlined">verified</span>
                     {{ $badge['text'] ?? '' }}
                 </span>
             @endforeach

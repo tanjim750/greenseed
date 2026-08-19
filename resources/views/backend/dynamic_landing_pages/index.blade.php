@@ -288,6 +288,13 @@
         white-space: nowrap;
     }
 
+    .dlp-title-actions {
+        align-items: center;
+        display: inline-flex;
+        flex: 0 0 auto;
+        gap: 6px;
+    }
+
     .dlp-status {
         align-items: center;
         border-radius: 999px;
@@ -313,6 +320,25 @@
     .dlp-status-archived {
         background: #eef2f7;
         color: #475569;
+    }
+
+    .dlp-duplicate-page {
+        align-items: center;
+        border: 1px solid #dbe5ee;
+        border-radius: 999px;
+        color: #334155;
+        display: inline-flex;
+        font-size: 12px;
+        font-weight: 800;
+        gap: 5px;
+        min-height: 24px;
+        padding: 0 9px;
+    }
+
+    .dlp-duplicate-page:hover {
+        background: #f0fdf4;
+        border-color: #b8e2c5;
+        color: #12642c;
     }
 
     .dlp-card-meta {
@@ -484,6 +510,10 @@
         .dlp-preview {
             height: 220px;
         }
+
+        .dlp-duplicate-page span {
+            display: none;
+        }
     }
 </style>
 @endpush
@@ -572,6 +602,7 @@
         pageStore: @json(route('admin.dynamic_landing_pages.store')),
         pageUpdate: @json(route('admin.dynamic_landing_pages.update', ['page' => '__PAGE_ID__'])),
         pageDestroy: @json(route('admin.dynamic_landing_pages.destroy', ['page' => '__PAGE_ID__'])),
+        pageDuplicate: @json(route('admin.dynamic_landing_pages.duplicate', ['page' => '__PAGE_ID__'])),
         builder: @json(route('admin.dynamic_landing_builder.v2'))
     };
     const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -645,6 +676,10 @@
 
     function destroyUrl(pageId) {
         return routes.pageDestroy.replace('__PAGE_ID__', encodeURIComponent(pageId));
+    }
+
+    function duplicateUrl(pageId) {
+        return routes.pageDuplicate.replace('__PAGE_ID__', encodeURIComponent(pageId));
     }
 
     function updateUrl(pageId) {
@@ -730,7 +765,13 @@
                         <div class="dlp-card-body">
                             <h6 class="dlp-card-title">
                                 <span class="dlp-title-text">${escapeHtml(page.name)}</span>
-                                <span class="dlp-status dlp-status-${statusClass(page.status)}">${escapeHtml(page.status)}</span>
+                                <span class="dlp-title-actions">
+                                    <span class="dlp-status dlp-status-${statusClass(page.status)}">${escapeHtml(page.status)}</span>
+                                    <button class="btn btn-sm btn-light dlp-duplicate-page" type="button" data-page-id="${escapeHtml(page.id)}" data-page-name="${escapeHtml(page.name)}" title="Duplicate page">
+                                        <i class="mdi mdi-content-copy"></i>
+                                        <span>Duplicate</span>
+                                    </button>
+                                </span>
                             </h6>
                             <div class="dlp-card-meta">
                                 ${Number(page.components_count || 0)} components
@@ -828,6 +869,27 @@
         }
     }
 
+    async function duplicatePage(pageId, pageName, button) {
+        clearAlert();
+        button.disabled = true;
+        const originalHtml = button.innerHTML;
+        button.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i><span>Duplicating</span>';
+
+        try {
+            const payload = await requestJson(duplicateUrl(pageId), {
+                method: 'POST'
+            });
+
+            state.pages = [payload.data, ...state.pages];
+            renderPages();
+            setAlert(`Duplicated "${pageName}" as "${payload.data.name}".`, 'success');
+        } catch (error) {
+            button.disabled = false;
+            button.innerHTML = originalHtml;
+            setAlert(error.message, 'danger');
+        }
+    }
+
     async function saveSlug(pageId, input, button) {
         const page = state.pages.find((item) => String(item.id) === String(pageId));
         const slug = slugify(input.value);
@@ -865,6 +927,13 @@
 
     el.buildNewPageBtn.addEventListener('click', buildNewPage);
     el.pages.addEventListener('click', (event) => {
+        const duplicateButton = event.target.closest('.dlp-duplicate-page');
+
+        if (duplicateButton) {
+            duplicatePage(duplicateButton.dataset.pageId, duplicateButton.dataset.pageName, duplicateButton);
+            return;
+        }
+
         const deleteButton = event.target.closest('.dlp-delete-page');
 
         if (deleteButton) {

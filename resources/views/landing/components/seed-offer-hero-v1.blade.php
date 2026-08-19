@@ -2,6 +2,7 @@
     $render = app(\App\Services\Landing\LandingRenderSupport::class);
     $durationHours = max(1, (int) data_get($settings, 'countdown.duration_hours', 4));
     $startsAt = data_get($settings, 'countdown.starts_at');
+    $showCountdown = (bool) ($settings['show_countdown'] ?? true);
     $behaviourPayload = collect($definition->behaviours())
         ->map(fn ($key) => [
             'key' => $key,
@@ -57,10 +58,12 @@
                     </div>
                 </div>
 
-                <div class="seed-countdown-card">
-                    <div class="seed-meta-label">{{ $content['timer_label'] ?? '' }}</div>
-                    <div class="landing-countdown" data-countdown-output>00d 00h 00m 00s</div>
-                </div>
+                @if($showCountdown)
+                    <div class="seed-countdown-card">
+                        <div class="seed-meta-label">{{ $content['timer_label'] ?? '' }}</div>
+                        <div class="landing-countdown" data-countdown-output>00d 00h 00m 00s</div>
+                    </div>
+                @endif
             </div>
         </div>
 

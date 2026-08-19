@@ -147,8 +147,10 @@ final class SeedCheckoutV1 extends BaseLandingComponent
             ];
         }
 
-        $price = (float) ($product->after_discount ?: $product->sell_price ?: $product->regular_price ?: 0);
-        $oldPrice = (float) ($product->regular_price ?: $product->sell_price ?: 0);
+        $variation = $product->variations()->orderBy('id')->first();
+        $price = (float) ($variation?->after_discount_price ?: $product->after_discount ?: $variation?->price ?: $product->sell_price ?: $product->regular_price ?: 0);
+        $orderBasePrice = (float) ($variation?->price ?: $product->sell_price ?: $product->regular_price ?: 0);
+        $oldPrice = (float) ($variation?->price ?: $product->regular_price ?: $product->sell_price ?: 0);
 
         return [
             'product' => [
@@ -157,6 +159,7 @@ final class SeedCheckoutV1 extends BaseLandingComponent
                 'sku' => $product->sku,
                 'image_url' => function_exists('getImage') ? getImage('products', $product->image) : asset('products/' . $product->image),
                 'price' => $price,
+                'order_base_price' => $orderBasePrice,
                 'old_price' => $oldPrice,
                 'formatted_price' => function_exists('priceFormate') ? priceFormate($price) : number_format($price, 2),
                 'formatted_old_price' => function_exists('priceFormate') ? priceFormate($oldPrice) : number_format($oldPrice, 2),
