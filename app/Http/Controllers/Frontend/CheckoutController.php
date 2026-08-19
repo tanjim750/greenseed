@@ -503,11 +503,19 @@ class CheckoutController extends Controller
         $req_data = $request->validate([
             'mobile'       => 'required|numeric|min:11',
             'name'         => 'nullable',
+            'first_name'   => 'nullable',
             'address'      => 'nullable',
+            'shipping_address' => 'nullable',
             'prd_id'       => 'nullable',
             'amount'       => 'nullable',
             'quantity'     => 'nullable',
-            'variation_id' => 'nullable'
+            'variation_id' => 'nullable',
+            'product_id'   => 'nullable|array',
+            'product_id.*' => 'nullable|integer|min:1',
+            'quantity.*'   => 'nullable|integer|min:1',
+            'unit_price'   => 'nullable|array',
+            'unit_discount' => 'nullable|array',
+            'variation_id.*' => 'nullable|integer|min:1',
         ]);
         
         DB::beginTransaction();
@@ -520,16 +528,17 @@ class CheckoutController extends Controller
 
             $user = null;
             if (!empty($request->mobile)) {
-                 $user = User::where('mobile', $request->mobile)->first();
-                 if(!$user) {
-                     $user = User::create([
-                         'mobile'           => $request->mobile,
-                         'first_name'       => $req_data['name'] ?? 'Guest',
-                         'username'         => strtolower(str_replace(' ', '', $req_data['name'] ?? 'guest')) . rand(100,999),
-                         'status'           => 1,
-                         'shipping_address' => $req_data['address'] ?? ''
-                     ]);
-                 }
+                $user = User::where('mobile', $request->mobile)->first();
+
+                if (!$user) {
+                    $user = User::create([
+                        'mobile'           => $request->mobile,
+                        'first_name'       => $req_data['name'] ?? $req_data['first_name'] ?? 'Guest',
+                        'username'         => strtolower(str_replace(' ', '', $req_data['name'] ?? $req_data['first_name'] ?? 'guest')) . rand(100, 999),
+                        'status'           => 1,
+                        'shipping_address' => $req_data['address'] ?? $req_data['shipping_address'] ?? ''
+                    ]);
+                }
             }
             
             $product_list = [];
@@ -538,7 +547,55 @@ class CheckoutController extends Controller
             $total_discount = 0;
             $coupn_discount = session()->get('coupon_discount') ?? 0;
 
-            if($request->has('prd_id') && !empty($request->prd_id)) {
+            if (is_array($request->product_id) && !empty(array_filter($request->product_id))) {
+                foreach ($request->product_id as $key => $productId) {
+                    if (empty($productId)) {
+                        continue;
+                    }
+
+                    $prodInfo = Product::find($productId);
+
+                    if (!$prodInfo) {
+                        continue;
+                    }
+
+                    $qty = max(1, (int) ($request->quantity[$key] ?? 1));
+                    $unitPrice = (float) ($request->unit_price[$key] ?? 0);
+                    $discount = (float) ($request->unit_discount[$key] ?? 0);
+                    $variationId = $request->variation_id[$key] ?? null;
+                    $variation = $variationId ? Variation::find($variationId) : null;
+
+                    if ($unitPrice <= 0) {
+                        $unitPrice = (float) (
+                            $variation?->after_discount_price
+                            ?: $variation?->price
+                            ?: $prodInfo->after_discount
+                            ?: $prodInfo->sell_price
+                            ?: 0
+                        );
+                    }
+
+                    $total += $qty * $unitPrice;
+                    $total_discount += $qty * $discount;
+
+                    $uniqueKey = $prodInfo->id . '_' . ($variationId ?? 0);
+
+                    if (isset($unique_check[$uniqueKey])) {
+                        $product_list[$unique_check[$uniqueKey]]['quantity'] += $qty;
+                    } else {
+                        $product_list[] = [
+                            'product_id'     => $prodInfo->id,
+                            'quantity'       => $qty,
+                            'unit_price'     => $unitPrice,
+                            'purchase_price' => $variation?->purchase_price ?? $prodInfo->purchase_price ?? $prodInfo->purchase_prices ?? 0,
+                            'variation_id'   => $variationId,
+                            'discount'       => $discount,
+                            'is_stock'       => $prodInfo->is_stock,
+                        ];
+                        $unique_check[$uniqueKey] = count($product_list) - 1;
+                    }
+                }
+            } elseif($request->has('prd_id') && !empty($request->prd_id)) {
                 $prodInfo = Product::find($request->prd_id);
                 if($prodInfo) {
                     $qty = $request->quantity ?? 1;
@@ -602,10 +659,11 @@ class CheckoutController extends Controller
                 'invoice_no'       => rand(111111,999999),
                 'discount'         => $total_discount + $coupn_discount,
                 'amount'           => $total_discount + $total,
-                'shipping_charge'  => 0, 
-                'first_name'       => $req_data['name'] ?? ($user->first_name ?? ''),
+                'shipping_charge'  => 0,
+                'first_name'       => $req_data['name'] ?? $req_data['first_name'] ?? ($user->first_name ?? ''),
                 'mobile'           => $req_data['mobile'],
-                'shipping_address' => $req_data['address'] ?? '',
+                'shipping_address' => $req_data['address'] ?? $req_data['shipping_address'] ?? '',
+                'ip_address'       => $request->ip_address ?? $request->ip(),
                 'status'           => 'incomplete',
                 'final_amount'     => $total - $coupn_discount,
                 'user_id'          => $user ? $user->id : null,
