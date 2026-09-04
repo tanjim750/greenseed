@@ -357,6 +357,10 @@ class OrderController extends Controller
     {
         if (!auth()->user()->can('order.create')) abort(403, 'unauthorized');
 
+        if (!$request->filled('payment_method') || strtolower((string) $request->input('payment_method')) === 'cod') {
+            $request->merge(['payment_method' => 'Cash on Delivery']);
+        }
+
         $data = $request->validate([
             'note'               => '',
             'first_name'         => 'required',

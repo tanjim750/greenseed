@@ -265,11 +265,11 @@
                     <div class="section-header mt-2">
                         <div class="section-title"><span class="badge-dot"></span> Payment Summary</div>
                     </div>
-                    <div class="section-box">
-                        <div class="row g-2">
-                            <div class="col-md-3 col-12">
-                                <label class="form-label">Delivery Charge</label>
-                                <select class="form-control" name="delivery_charge_id" id="delevery_charge">
+	                    <div class="section-box">
+	                        <div class="row g-2">
+	                            <div class="col-md-3 col-12">
+	                                <label class="form-label">Delivery Charge</label>
+	                                <select class="form-control" name="delivery_charge_id" id="delevery_charge">
                                     <option value="" data-charge="0">Select One</option>
                                     @foreach($charges as $charge)
                                         <option value="{{ $charge->id }}" data-charge="{{ $charge->amount }}">{{ $charge->title }}</option>
@@ -279,11 +279,17 @@
                             <div class="col-md-3 col-12">
                                 <label class="form-label">Total</label>
                                 <input type="text" class="form-control" name="final_amount" id="purchase_total" readonly />
-                                <input type="hidden" value="0" name="shipping_charge" id="shipping_charge" />
-                                <input type="hidden" name="discount" id="discount_amount" value="0" />
-                            </div>
-                        </div>
-                    </div>
+	                                <input type="hidden" value="0" name="shipping_charge" id="shipping_charge" />
+	                                <input type="hidden" name="discount" id="discount_amount" value="0" />
+	                            </div>
+	                            <div class="col-md-3 col-12">
+	                                <label class="form-label">Payment Method</label>
+	                                <select class="form-control" name="payment_method" required>
+	                                    <option value="Cash on Delivery" selected>Cash on Delivery</option>
+	                                </select>
+	                            </div>
+	                        </div>
+	                    </div>
 
                     {{-- Note --}}
                     <div class="section-header mt-2">
