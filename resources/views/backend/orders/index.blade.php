@@ -349,12 +349,13 @@
             <a class="multi_order_print d-none" href="{{ route('admin.orderList')}}"></a>
         </div>
 
-        <a class="send_to_redx btn bg-white text-dark action-btn" href="{{ route('admin.createRedxParcel')}}" title="Send to RedX"><i class="mdi mdi-truck-fast text-danger"></i> <span class="d-none d-xl-inline">Redx</span></a>
-        <a class="send_to_pathao btn bg-white text-dark action-btn" href="{{ route('admin.createPathaoParcel')}}" title="Send to Pathao"><i class="mdi mdi-motorbike text-danger"></i> <span class="d-none d-xl-inline">Pathao</span></a>
+        {{-- <a class="send_to_redx btn bg-white text-dark action-btn" href="{{ route('admin.createRedxParcel')}}" title="Send to RedX"><i class="mdi mdi-truck-fast text-danger"></i> <span class="d-none d-xl-inline">Redx</span></a> --}}
+        {{-- <a class="send_to_pathao btn bg-white text-dark action-btn" href="{{ route('admin.createPathaoParcel')}}" title="Send to Pathao"><i class="mdi mdi-motorbike text-danger"></i> <span class="d-none d-xl-inline">Pathao</span></a> --}}
+
         <a class="send_to_steadfast btn bg-white text-dark action-btn" href="{{ route('admin.createSteadfastParcel')}}" title="Send to Steadfast"><i class="mdi mdi-truck-delivery text-success"></i> <span class="d-none d-xl-inline">Steadfast</span></a>
-        
-        <a class="send_to_carrybee btn bg-white text-dark action-btn" href="{{ route('admin.createCarrybeeParcel')}}" title="Send to Carrybee"><i class="mdi mdi-bee text-warning"></i> <span class="d-none d-xl-inline">Carrybee</span></a>
-        
+
+        {{-- <a class="send_to_carrybee btn bg-white text-dark action-btn" href="{{ route('admin.createCarrybeeParcel')}}" title="Send to Carrybee"><i class="mdi mdi-bee text-warning"></i> <span class="d-none d-xl-inline">Carrybee</span></a> --}}
+
         <button class="btn bg-white text-dark action-btn" id="btn_courier_status" href="{{ route('admin.updateCourierStatus') }}" title="Sync Courier Status"><i class="mdi mdi-refresh text-primary"></i> <span class="d-none d-xl-inline">Sync Status</span></button>
     </div>
 </div>
@@ -366,6 +367,7 @@
                 <div class="status-chip-row">
                     @foreach(getOrderStatus() as $key=>$value)
                         @php
+                            $statusCount = (int) ($counts[$key] ?? 0);
                             $icon = 'mdi-package-variant';
                             $iconColor = 'text-secondary';
                             $lbl = strtolower($value);
@@ -379,7 +381,7 @@
                             elseif(str_contains($lbl, 'hold')) { $icon = 'mdi-pause-circle'; $iconColor = 'text-warning'; }
                         @endphp
                         
-                        <label class="status-chip" data-status="{{$key}}">
+                        <label class="status-chip {{ $statusCount > 0 ? '' : 'd-none' }}" data-status="{{$key}}">
                             <input type="radio" class="order_sts" name="status" value="{{$key}}"/>
                             <div class="d-flex align-items-center gap-2" style="overflow: hidden;">
                                 <i class="mdi {{$icon}} {{$iconColor}} chip-icon"></i>
@@ -387,7 +389,7 @@
                             </div>
                             {{-- 🔥 DYNAMIC COUNTS IMPLEMENTED HERE 🔥 --}}
                             <span class="count-badge shadow-sm">
-                                {{ $counts[$key] ?? 0 }}
+                                {{ $statusCount }}
                             </span>
                         </label>
                     @endforeach
@@ -491,14 +493,14 @@
     <div class="dropup d-inline-block">
         <button type="button" class="btn btn-sm btn-warning text-dark dropdown-toggle border-0" data-bs-toggle="dropdown">
             <i class="mdi mdi-truck-delivery"></i> Courier
-        </button>
-        <ul class="dropdown-menu shadow mb-2" style="border-radius:10px;">
-            <li><a class="dropdown-item fw-bold" href="#" id="bb-redx">Redx</a></li>
-            <li><a class="dropdown-item fw-bold" href="#" id="bb-pathao">Pathao</a></li>
-            <li><a class="dropdown-item fw-bold" href="#" id="bb-steadfast">Steadfast</a></li>
-            <li><a class="dropdown-item fw-bold" href="#" id="bb-carrybee">Carrybee</a></li>
-        </ul>
-    </div>
+	        </button>
+	        <ul class="dropdown-menu shadow mb-2" style="border-radius:10px;">
+	            {{-- <li><a class="dropdown-item fw-bold" href="#" id="bb-redx">Redx</a></li> --}}
+	            {{-- <li><a class="dropdown-item fw-bold" href="#" id="bb-pathao">Pathao</a></li> --}}
+	            <li><a class="dropdown-item fw-bold" href="#" id="bb-steadfast">Steadfast</a></li>
+	            {{-- <li><a class="dropdown-item fw-bold" href="#" id="bb-carrybee">Carrybee</a></li> --}}
+	        </ul>
+	    </div>
     <button type="button" class="btn btn-sm btn-success text-white" id="bb-print"><i class="mdi mdi-printer"></i> Print Selected</button>
     <button type="button" class="btn btn-sm btn-dark text-white" id="bb-trash"><i class="mdi mdi-trash-can-outline"></i> Move to Trash</button>
     @can('order.delete')
@@ -638,15 +640,57 @@ $(function(){
         });
     });
 
-    $(document).on('click', '.order-row', function(e) {
-        if ($(e.target).closest('a, button, input, select, label, .badge-soft, textarea, .action-icon, .view-history-btn').length) {
-            return;
-        }
-        let id = $(this).data('id');
-        window.showOrderDetails(this, id);
-    });
+	    $(document).on('click', '.order-row', function(e) {
+	        if ($(e.target).closest('a, button, input, select, label, .badge-soft, textarea, .action-icon, .view-history-btn, .courier-copy-cell').length) {
+	            return;
+	        }
+	        let id = $(this).data('id');
+	        window.showOrderDetails(this, id);
+	    });
 
-    window.refreshBulk = function(){
+	    function copyTextToClipboard(text) {
+	        if (navigator.clipboard && window.isSecureContext) {
+	            return navigator.clipboard.writeText(text);
+	        }
+
+	        const textarea = document.createElement('textarea');
+	        textarea.value = text;
+	        textarea.setAttribute('readonly', '');
+	        textarea.style.position = 'fixed';
+	        textarea.style.left = '-9999px';
+	        document.body.appendChild(textarea);
+	        textarea.select();
+
+	        try {
+	            document.execCommand('copy');
+	            return Promise.resolve();
+	        } catch (error) {
+	            return Promise.reject(error);
+	        } finally {
+	            document.body.removeChild(textarea);
+	        }
+	    }
+
+	    $(document).on('click', '.courier-copy-cell', function(e) {
+	        e.preventDefault();
+	        e.stopPropagation();
+
+	        const consignmentId = String($(this).data('consignment-id') || '').trim();
+	        if (!consignmentId) {
+	            if (typeof toastr !== 'undefined') toastr.warning('No courier consignment ID found.');
+	            return;
+	        }
+
+	        copyTextToClipboard(consignmentId)
+	            .then(function() {
+	                if (typeof toastr !== 'undefined') toastr.success('Consignment ID copied.');
+	            })
+	            .catch(function() {
+	                if (typeof toastr !== 'undefined') toastr.error('Failed to copy consignment ID.');
+	            });
+	    });
+
+	    window.refreshBulk = function(){
         const cnt = $('.order_checkbox:checked:visible').length;
         $('#bulkCount').text(cnt + ' Selected');
         if(cnt > 0){ 
@@ -699,6 +743,25 @@ $(function(){
         if($checked.length) $checked.closest('.status-chip').addClass('is-active');
     }
 
+    function statusChipFor(status) {
+        return $('.status-chip').filter(function() {
+            return String($(this).data('status') ?? '') === String(status ?? '');
+        });
+    }
+
+    function applyStatusCounts(counts) {
+        if (!counts) return;
+
+        $.each(counts, function(status, count){
+            const normalizedCount = Number(count) || 0;
+            const $chip = statusChipFor(status);
+            $chip.find('.count-badge').text(normalizedCount);
+            $chip.toggleClass('d-none', normalizedCount < 1);
+        });
+
+        syncActiveChip();
+    }
+
     $("select[name='redx_status'], select[name='courier_type']").on('change', getOrderList);
     $("#start_date, #end_date").on('change', getOrderList);
     
@@ -727,11 +790,7 @@ $(function(){
                     
                     window.currentAjaxUrl = this.url;
                     
-                    if(res.counts){
-                        $.each(res.counts, function(status, count){
-                            $('.status-chip[data-status="'+status+'"] .count-badge').text(count);
-                        });
-                    }
+                    applyStatusCounts(res.counts);
                     syncNavbarActiveState(statusValue);
                 }
             }
@@ -757,11 +816,7 @@ $(function(){
                     
                     window.currentAjaxUrl = this.url;
                     
-                    if(res.counts){
-                        $.each(res.counts, function(status, count){
-                            $('.status-chip[data-status="'+status+'"] .count-badge').text(count);
-                        });
-                    }
+                    applyStatusCounts(res.counts);
                     syncNavbarActiveState(statusValue);
                 }
             }
@@ -933,31 +988,63 @@ $(function(){
         });
     }
     
-    $(document).on('click', 'a.send_to_redx', function(e){ e.preventDefault(); sendToCourier($(this),'Redx'); });
-    $(document).on('click', 'a.send_to_pathao', function(e){ e.preventDefault(); sendToCourier($(this),'Pathao'); });
+    // $(document).on('click', 'a.send_to_redx', function(e){ e.preventDefault(); sendToCourier($(this),'Redx'); });
+    // $(document).on('click', 'a.send_to_pathao', function(e){ e.preventDefault(); sendToCourier($(this),'Pathao'); });
     $(document).on('click', 'a.send_to_steadfast', function(e){ e.preventDefault(); sendToCourier($(this),'Steadfast'); });
 
-    $('#bb-redx').on('click', function(e){ e.preventDefault(); $('.send_to_redx').first().trigger('click'); });
-    $('#bb-pathao').on('click', function(e){ e.preventDefault(); $('.send_to_pathao').first().trigger('click'); });
+    // $('#bb-redx').on('click', function(e){ e.preventDefault(); $('.send_to_redx').first().trigger('click'); });
+    // $('#bb-pathao').on('click', function(e){ e.preventDefault(); $('.send_to_pathao').first().trigger('click'); });
     $('#bb-steadfast').on('click', function(e){ e.preventDefault(); $('.send_to_steadfast').first().trigger('click'); });
 
-    $(document).on('click', 'a.send_to_carrybee', function(e){ e.preventDefault(); sendToCourier($(this),'Carrybee'); });
-    $('#bb-carrybee').on('click', function(e){ e.preventDefault(); $('.send_to_carrybee').first().trigger('click'); });
+    // $(document).on('click', 'a.send_to_carrybee', function(e){ e.preventDefault(); sendToCourier($(this),'Carrybee'); });
+    // $('#bb-carrybee').on('click', function(e){ e.preventDefault(); $('.send_to_carrybee').first().trigger('click'); });
 
     $('#bb-assign').on('click', function(){ $('.btn_modal[href="{{ route("admin.assignUser") }}"]').trigger('click'); });
     $('#bb-status').on('click', function(){ $('.btn_modal[href="{{ route("admin.orderStatusUpdateMulti") }}"]').trigger('click'); });
     $('#bb-print').on('click', function(){ $('.multi_order_print').first().trigger('click'); });
-    $('#bb-trash').on('click', function(){
-        const order_ids = $('.order_checkbox:checked:visible').map(function(){ return $(this).val(); }).get();
-        if(!order_ids.length){ toastr.error('Please Select Atleast One Order!'); return; }
+	    $('#bb-trash').on('click', function(){
+	        const order_ids = $('.order_checkbox:checked:visible').map(function(){ return $(this).val(); }).get();
+	        if(!order_ids.length){ toastr.error('Please Select Atleast One Order!'); return; }
 
-        $.get('{{ route("admin.multuOrderStatusUpdate") }}', {status: 'Trash', order_ids}, function(res){
-            if(res.status){ toastr.success(res.msg); smartReload(); }
-            else{ toastr.error(res.msg || 'Something went wrong!'); }
-        });
-    });
-    $('#bb-force-delete').on('click', function(){
-        const order_ids = $('.order_checkbox:checked:visible').map(function(){ return $(this).val(); }).get();
+	        $.get('{{ route("admin.multuOrderStatusUpdate") }}', {status: 'Trash', order_ids}, function(res){
+	            if(res.status){ toastr.success(res.msg); smartReload(); }
+	            else{ toastr.error(res.msg || 'Something went wrong!'); }
+	        });
+	    });
+
+	    $(document).on('click', '.move-order-trash-btn', function(e){
+	        e.preventDefault();
+	        e.stopPropagation();
+
+	        const orderId = $(this).data('id');
+	        if(!orderId){ toastr.error('Order ID not found!'); return; }
+
+	        swal({
+	            title: "Move to trash?",
+	            text: "This order will be moved to Trash, not permanently deleted.",
+	            type: "warning",
+	            showCancelButton: true,
+	            confirmButtonColor: "#111827",
+	            confirmButtonText: "Yes, move it",
+	            cancelButtonText: "No, cancel",
+	            closeOnConfirm: true,
+	            closeOnCancel: true
+	        }, function(isConfirm){
+	            if(!isConfirm) return;
+
+	            $.get('{{ route("admin.multuOrderStatusUpdate") }}', {status: 'Trash', order_ids: [orderId]}, function(res){
+	                if(res.status){
+	                    toastr.success(res.msg || 'Order moved to Trash.');
+	                    smartReload();
+	                } else {
+	                    toastr.error(res.msg || 'Something went wrong!');
+	                }
+	            });
+	        });
+	    });
+
+	    $('#bb-force-delete').on('click', function(){
+	        const order_ids = $('.order_checkbox:checked:visible').map(function(){ return $(this).val(); }).get();
         if(!order_ids.length){ toastr.error('Please Select Atleast One Order!'); return; }
 
         $.get('{{ route("admin.deleteAllOrder2") }}', {order_ids}, function(res){
@@ -982,11 +1069,7 @@ $(function(){
                     $('.check_all').prop('checked', false);
                     window.refreshBulk();
                     
-                    if(res.counts){
-                        $.each(res.counts, function(status, count){
-                            $('.status-chip[data-status="'+status+'"] .count-badge').text(count);
-                        });
-                    }
+                    applyStatusCounts(res.counts);
                 } else if(res.html) {
                     $('#rcvd_order').html(res.html); 
                 } else {

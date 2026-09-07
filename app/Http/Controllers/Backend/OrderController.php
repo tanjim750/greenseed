@@ -487,6 +487,10 @@ class OrderController extends Controller
         if ($info && $info->invoice_type == 2) {
             return view('backend.orders.invoice_design_2', compact('item', 'info'));
         }
+
+        if ($info && $info->invoice_type == 5) {
+            return view('backend.orders.invoice_design_5', compact('item', 'info'));
+        }
         
         return view('backend.orders.show_prnt', compact('item', 'info'));
     }
